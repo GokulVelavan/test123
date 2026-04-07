@@ -277,7 +277,7 @@ Description=SentinelLog Agent
 After=network.target
 
 [Service]
-Type=notify
+Type=simple
 User=$SERVICE_USER
 WorkingDirectory=$INSTALL_DIR
 ExecStart=$INSTALL_DIR/$BINARY_NAME

@@ -244,7 +244,9 @@ echo "     Done."
 
 # ── 6. Write appsettings.json ──────────────────────────────────────────────────
 info "6. Writing configuration..."
-CONN_STR="Host=$DB_HOST; Port=$DB_PORT; Username=$DB_USER; Password=$DB_PASS; Database=$DB_NAME;"
+DB_PASS_ESC="${DB_PASS//\\/\\\\}"
+DB_PASS_ESC="${DB_PASS_ESC//\"/\\\"}"
+CONN_STR="Host=$DB_HOST; Port=$DB_PORT; Username=$DB_USER; Password=$DB_PASS_ESC; Database=$DB_NAME;"
 APPSETTINGS="$INSTALL_DIR/appsettings.json"
 
 cat > "$APPSETTINGS" <<JSON
@@ -281,7 +283,7 @@ Description=SentinelLog Worker
 After=network.target
 
 [Service]
-Type=notify
+Type=simple
 User=$SERVICE_USER
 WorkingDirectory=$INSTALL_DIR
 ExecStart=$INSTALL_DIR/$BINARY_NAME

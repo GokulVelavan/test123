@@ -289,7 +289,7 @@ source s_net {
     network(ip("0.0.0.0") port(1514) transport("udp"));
     network(ip("0.0.0.0") port(601)  transport("tcp"));
     network(ip("0.0.0.0") port(1515) transport("tcp"));
-    network(ip("0.0.0.0") port(TLSPORT transport("tls")
+    network(ip("0.0.0.0") port(TLSPORT) transport("tls")
         tls(key-file("KEYFILE") cert-file("CERTFILE") peer-verify(optional-untrusted))
     );
 };
