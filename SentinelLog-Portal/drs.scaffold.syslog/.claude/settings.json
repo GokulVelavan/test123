@@ -1,0 +1,39 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(grep -r \"class.*Dto\\\\|record.*Dto\" d:/syslog-UI/drs.scaffold.syslog/DRS.Scaffold.Syslog.Core/ViewModels/*.cs)",
+      "Bash(find d:syslog-UIdrs.scaffold.syslog/DRS.Scaffold.Syslog.Middleware -type f -name *.cs)",
+      "Bash(find d:syslog-UIdrs.scaffold.syslog -name *Worker* -o -name *Service*)",
+      "Bash(grep -E \"\\\\.\\(cs|txt\\)$\")",
+      "Bash(find d:syslog-UIdrs.scaffold.syslog -name *Parser* -o -name *Parsing*)",
+      "Bash(find d:syslog-UIdrs.scaffold.syslogDRS.Scaffold.Syslog.Worker -name *.cs)",
+      "Bash(grep -l role d:/syslog-UI/drs.scaffold.syslog/DRS.Scaffold.Syslog.API/Migrations/*.cs)",
+      "Read(//d/syslog-UI/drs.scaffold.syslog/DRS.Scaffold.Syslog.API/**)",
+      "Bash(grep -n '== \"\"true\"\"' \"D:\\\\syslog-UI\\\\drs.scaffold.syslog\\\\DRS.Scaffold.Syslog.Middleware\\\\Managers\\\\UserManager.cs\")",
+      "Read(//d d:/syslog-UI/**)",
+      "Bash(find \"d:\\\\syslog-UI\\\\drs.scaffold.syslog\" -name \"*.cshtml\" -type f -exec grep -l \"sev-badge\\\\|severity\" {})",
+      "Read(//d//**)",
+      "Read(//d/SyslogAgent-Desktop/**)",
+      "Read(//d/Linux-Syslog/**)",
+      "Read(//d/Syslog-Machine-agent/**)",
+      "Bash(head -30 grep -n \"setInterval\\\\|setTimeout\\\\|function load\\\\|loadIncidents\\\\|loadIndicators\\\\|loadAnomal\" \"d:/syslog-UI/drs.scaffold.syslog/DRS.Scaffold.Syslog.WebUI/Views/ThreatIntel/Index.cshtml\")",
+      "Bash(head -30 grep -n \"setInterval\\\\|setTimeout\\\\|function load\\\\|loadIncidents\\\\|loadIndicators\\\\|loadAnomal\" \"d:/syslog-UI/drs.scaffold.syslog/DRS.Scaffold.Syslog.WebUI/Views/Anomaly/Index.cshtml\")",
+      "Bash(grep -rn ConnectionString d:/syslog-UI/drs.scaffold.syslog/DRS.Scaffold.Syslog.API/ --include=*.json)",
+      "Bash(PGPASSWORD=\"u0MjCOVeTvx40ZhRBCV1\" psql -h jsw-ams.c5pwstwpokkz.ap-south-1.rds.amazonaws.com -U postgres -d Syslog -c \"SELECT id, name, severity, sourcetype, conditionexpression, enabled FROM alertrule WHERE isdeleted=false ORDER BY id;\")",
+      "Bash(PGPASSWORD=\"u0MjCOVeTvx40ZhRBCV1\" /d/SyslogStack/pgsql/bin/psql.exe -h jsw-ams.c5pwstwpokkz.ap-south-1.rds.amazonaws.com -U postgres -d Syslog -c \"SELECT id, name, severity, sourcetype, conditionexpression, enabled FROM alertrule WHERE isdeleted=false ORDER BY id;\")",
+      "Bash(PGPASSWORD=\"u0MjCOVeTvx40ZhRBCV1\" /d/SyslogStack/pgsql/bin/psql.exe -h jsw-ams.c5pwstwpokkz.ap-south-1.rds.amazonaws.com -U postgres -d Syslog -c \"SELECT hostname, devicetype, severity, message, createdat FROM logevent ORDER BY id DESC LIMIT 10;\")",
+      "Bash(PGPASSWORD=\"u0MjCOVeTvx40ZhRBCV1\" /d/SyslogStack/pgsql/bin/psql.exe -h jsw-ams.c5pwstwpokkz.ap-south-1.rds.amazonaws.com -U postgres -d Syslog -c \"SELECT hostname, devicetype, severity, LEFT\\(message,80\\) as msg FROM logevent ORDER BY id DESC LIMIT 5;\")",
+      "Bash(PGPASSWORD=\"u0MjCOVeTvx40ZhRBCV1\" /d/SyslogStack/pgsql/bin/psql.exe -h jsw-ams.c5pwstwpokkz.ap-south-1.rds.amazonaws.com -U postgres -d Syslog -c \"SELECT id, ipaddress, name, status FROM source WHERE isdeleted=false LIMIT 10;\")",
+      "Bash(PGPASSWORD=\"u0MjCOVeTvx40ZhRBCV1\" /d/SyslogStack/pgsql/bin/psql.exe -h jsw-ams.c5pwstwpokkz.ap-south-1.rds.amazonaws.com -U postgres -d Syslog -c \":*)",
+      "Bash(PGPASSWORD=\"u0MjCOVeTvx40ZhRBCV1\" /d/SyslogStack/pgsql/bin/psql.exe -h jsw-ams.c5pwstwpokkz.ap-south-1.rds.amazonaws.com -U postgres -d Syslog -c \"\\\\d systemlogs\")",
+      "Bash(PGPASSWORD=\"u0MjCOVeTvx40ZhRBCV1\" /d/SyslogStack/pgsql/bin/psql.exe -h jsw-ams.c5pwstwpokkz.ap-south-1.rds.amazonaws.com -U postgres -d Syslog -c \"\\\\d logforwarder\")",
+      "Bash(/dev/null grep:*)",
+      "Bash(PGPASSWORD=\"u0MjCOVeTvx40ZhRBCV1\" /d/SyslogStack/pgsql/bin/psql.exe -h jsw-ams.c5pwstwpokkz.ap-south-1.rds.amazonaws.com -U postgres -d Syslog -c \"SELECT id, name, host, port, protocol, enabled FROM logforwarder WHERE isdeleted=false;\")",
+      "Bash(dotnet publish:*)"
+    ],
+    "additionalDirectories": [
+      "D:\\SyslogAgent-Desktop",
+      "D:\\Syslog-Machine-agent\\src\\SyslogAgent"
+    ]
+  }
+}

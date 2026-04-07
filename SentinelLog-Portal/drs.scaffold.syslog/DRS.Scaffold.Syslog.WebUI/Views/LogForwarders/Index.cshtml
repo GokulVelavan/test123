@@ -1,0 +1,237 @@
+@{
+    Layout = "_AppLayout";
+    ViewData["Title"] = "Log Forwarding";
+    ViewData["TopbarMeta"] = "Relay syslog events to external systems";
+}
+<div style="padding:20px;display:flex;flex-direction:column;gap:16px">
+
+    @* ── Info Banner ───────────────────────────────────────────────────────── *@
+    <div style="background:var(--accent-cyan)18;border:1px solid var(--accent-cyan)44;border-radius:8px;padding:14px 18px;font-size:13px;color:var(--text-secondary)">
+        <strong style="color:var(--accent-cyan)">Log Forwarding</strong> — relay incoming syslog events to external collectors, SIEMs, or syslog aggregators.
+        Supports UDP, TCP, TLS, and HTTP/HTTPS output in RFC5424, RFC3164, JSON, CEF, and LEEF formats.
+    </div>
+
+    @* ── Forwarder List ────────────────────────────────────────────────────── *@
+    <div class="panel">
+        <div class="panel-header">
+            <div class="panel-title">Forwarder Destinations</div>
+            <div class="panel-controls">
+                <button class="btn btn-accent btn-sm" onclick="openCreateModal()">&#43; Add Forwarder</button>
+            </div>
+        </div>
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>Name</th>
+                    <th>Destination</th>
+                    <th>Protocol</th>
+                    <th>Format</th>
+                    <th>Severity Filter</th>
+                    <th>Forwarded</th>
+                    <th>Errors</th>
+                    <th>Status</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody id="fwdTbody"><tr><td colspan="9" style="color:var(--text-muted);text-align:center">Loading…</td></tr></tbody>
+        </table>
+    </div>
+
+</div>
+
+@* ── Create / Edit Modal ─────────────────────────────────────────────────────── *@
+<div class="modal-overlay hidden" id="fwdModal">
+    <div class="modal-box" style="max-width:560px">
+        <div class="modal-header">
+            <div class="modal-title" id="fwdModalTitle">Add Forwarder</div>
+            <button class="modal-close" onclick="closeFwdModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <div class="form-row">
+                <label class="form-label">Name *</label>
+                <input class="form-input" id="fwdName" placeholder="e.g. Splunk HEC, SIEM Relay…" />
+            </div>
+            <div class="form-row-2">
+                <div class="form-row">
+                    <label class="form-label">Protocol</label>
+                    <select class="form-select" id="fwdProtocol" onchange="toggleTls()">
+                        <option value="UDP">UDP</option>
+                        <option value="TCP">TCP</option>
+                        <option value="TLS">TLS</option>
+                        <option value="HTTP">HTTP</option>
+                        <option value="HTTPS">HTTPS</option>
+                    </select>
+                </div>
+                <div class="form-row">
+                    <label class="form-label">Format</label>
+                    <select class="form-select" id="fwdFormat">
+                        <option value="RFC5424">RFC5424 (Standard Syslog)</option>
+                        <option value="RFC3164">RFC3164 (BSD Syslog)</option>
+                        <option value="JSON">JSON</option>
+                        <option value="CEF">CEF (Common Event Format)</option>
+                        <option value="LEEF">LEEF (IBM QRadar)</option>
+                    </select>
+                </div>
+            </div>
+            <div style="display:grid;grid-template-columns:2fr 1fr;gap:12px">
+                <div class="form-row">
+                    <label class="form-label">Host / URL *</label>
+                    <input class="form-input" id="fwdHost" placeholder="siem.company.com or https://…" />
+                </div>
+                <div class="form-row">
+                    <label class="form-label">Port</label>
+                    <input class="form-input" type="number" id="fwdPort" value="514" />
+                </div>
+            </div>
+            <div id="tlsCertRow" style="display:none">
+                <div class="form-row">
+                    <label class="form-label">TLS Certificate Path</label>
+                    <input class="form-input" id="fwdTlsCert" placeholder="/etc/certs/siem.pem" />
+                </div>
+            </div>
+            <div class="form-row">
+                <label class="form-label">Severity Filter (leave blank to forward all)</label>
+                <input class="form-input" id="fwdSeverity" placeholder="e.g. 0,1,2 (Emergency, Alert, Critical only)" />
+            </div>
+            <div class="form-row">
+                <label class="form-label">Description</label>
+                <input class="form-input" id="fwdDesc" placeholder="Purpose of this forwarder…" />
+            </div>
+            <div class="toggle-wrap">
+                <label class="toggle-switch"><input type="checkbox" id="fwdEnabled" checked><span class="toggle-slider"></span></label>
+                <span class="form-label" style="text-transform:none;letter-spacing:0">Enabled</span>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-ghost btn-sm" onclick="closeFwdModal()">Cancel</button>
+            <button class="btn btn-accent btn-sm" id="fwdSaveBtn" onclick="saveFwd()">Add Forwarder</button>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+function esc(s) { var d = document.createElement('div'); d.textContent = String(s ?? ''); return d.innerHTML; }
+var _fwdEditId = null;
+
+function toggleTls() {
+    const proto = document.getElementById('fwdProtocol').value;
+    document.getElementById('tlsCertRow').style.display = proto === 'TLS' ? '' : 'none';
+    if (proto === 'TLS' && document.getElementById('fwdPort').value === '514')
+        document.getElementById('fwdPort').value = '6514';
+    if (proto === 'UDP' && document.getElementById('fwdPort').value === '6514')
+        document.getElementById('fwdPort').value = '514';
+}
+
+async function loadForwarders() {
+    const tbody = document.getElementById('fwdTbody');
+    try {
+        const r = await fetch('/api/log-forwarders');
+        if (!r.ok) { tbody.innerHTML = `<tr><td colspan="9" style="color:var(--sev-error);text-align:center">Failed to load.</td></tr>`; return; }
+        const items = await r.json();
+        if (!items.length) {
+            tbody.innerHTML = `<tr><td colspan="9" style="color:var(--text-muted);text-align:center">No forwarders configured. Add one to start relaying logs.</td></tr>`;
+            return;
+        }
+        tbody.innerHTML = items.map(f => `
+            <tr>
+                <td style="font-weight:500;color:var(--text-primary)">${esc(f.name)}</td>
+                <td class="mono" style="font-size:12px;color:var(--accent-cyan)">${esc(f.host)}:${f.port}</td>
+                <td><span class="sev-badge" style="background:var(--bg-elevated);color:var(--text-muted)">${esc(f.protocol)}</span></td>
+                <td style="font-size:12px;color:var(--text-secondary)">${esc(f.format)}</td>
+                <td style="font-size:12px;color:var(--text-muted)">${esc(f.severityFilter || 'All')}</td>
+                <td style="font-size:12px;color:var(--sev-notice)">${(f.forwardedCount||0).toLocaleString()}</td>
+                <td style="font-size:12px;color:${f.errorCount > 0 ? 'var(--sev-error)' : 'var(--text-muted)'}">${(f.errorCount||0).toLocaleString()}</td>
+                <td>
+                    <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+                        <input type="checkbox" ${f.enabled ? 'checked' : ''} onchange="toggleFwd(${f.id}, this.checked)" />
+                        <span style="font-size:12px;color:${f.enabled ? 'var(--sev-notice)' : 'var(--text-muted)'}">${f.enabled ? 'Active' : 'Paused'}</span>
+                    </label>
+                </td>
+                <td>
+                    <button class="btn btn-sm" style="font-size:11px;padding:3px 8px;background:transparent;border:1px solid var(--border);color:var(--accent-cyan)" onclick="editFwd(${f.id})">Edit</button>
+                    <button class="btn btn-sm" style="font-size:11px;padding:3px 8px;background:transparent;border:1px solid var(--border);color:var(--sev-error);margin-left:4px" onclick="deleteFwd(${f.id})">Delete</button>
+                </td>
+            </tr>`).join('');
+    } catch { tbody.innerHTML = `<tr><td colspan="9" style="color:var(--sev-error);text-align:center">Network error.</td></tr>`; }
+}
+
+async function toggleFwd(id, enabled) {
+    const r = await fetch(`/api/log-forwarders/${id}/toggle?enabled=${enabled}`, { method: 'PATCH' });
+    if (!r.ok) { alert('Toggle failed (HTTP ' + r.status + ')'); loadForwarders(); return; }
+    loadForwarders();
+}
+
+function openCreateModal() {
+    _fwdEditId = null;
+    document.getElementById('fwdModalTitle').textContent = 'Add Forwarder';
+    document.getElementById('fwdSaveBtn').textContent = 'Add Forwarder';
+    ['fwdName','fwdHost','fwdSeverity','fwdDesc','fwdTlsCert'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('fwdProtocol').value = 'UDP';
+    document.getElementById('fwdFormat').value   = 'RFC5424';
+    document.getElementById('fwdPort').value     = '514';
+    document.getElementById('fwdEnabled').checked = true;
+    toggleTls();
+    document.getElementById('fwdModal').classList.remove('hidden');
+}
+
+async function editFwd(id) {
+    try {
+        const r = await fetch(`/api/log-forwarders/${id}`);
+        if (!r.ok) return;
+        const d = await r.json();
+        _fwdEditId = id;
+        document.getElementById('fwdModalTitle').textContent = `Edit Forwarder #${id}`;
+        document.getElementById('fwdSaveBtn').textContent = 'Save Changes';
+        document.getElementById('fwdName').value     = d.name           || '';
+        document.getElementById('fwdProtocol').value = d.protocol       || 'UDP';
+        document.getElementById('fwdFormat').value   = d.format         || 'RFC5424';
+        document.getElementById('fwdHost').value     = d.host           || '';
+        document.getElementById('fwdPort').value     = d.port           ?? 514;
+        document.getElementById('fwdSeverity').value = d.severityFilter || '';
+        document.getElementById('fwdDesc').value     = d.description    || '';
+        document.getElementById('fwdTlsCert').value  = d.tlsCertPath    || '';
+        document.getElementById('fwdEnabled').checked = d.enabled ?? true;
+        toggleTls();
+        document.getElementById('fwdModal').classList.remove('hidden');
+    } catch {}
+}
+
+async function saveFwd() {
+    const host = document.getElementById('fwdHost').value.trim();
+    if (!host) { alert('Host is required.'); return; }
+    const body = {
+        name:           document.getElementById('fwdName').value.trim(),
+        protocol:       document.getElementById('fwdProtocol').value,
+        format:         document.getElementById('fwdFormat').value,
+        host:           document.getElementById('fwdHost').value.trim(),
+        port:           parseInt(document.getElementById('fwdPort').value) || 514,
+        severityFilter: document.getElementById('fwdSeverity').value.trim() || null,
+        description:    document.getElementById('fwdDesc').value.trim()     || null,
+        tlsCertPath:    document.getElementById('fwdTlsCert').value.trim()  || null,
+        enabled:        document.getElementById('fwdEnabled').checked
+    };
+    if (!body.name || !body.host) { alert('Name and Host are required.'); return; }
+
+    const url    = _fwdEditId ? `/api/log-forwarders/${_fwdEditId}` : '/api/log-forwarders';
+    const method = _fwdEditId ? 'PUT' : 'POST';
+    try {
+        const r = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+        if (!r.ok) { alert('Save failed.'); return; }
+        closeFwdModal();
+        loadForwarders();
+    } catch { alert('Network error.'); }
+}
+
+async function deleteFwd(id) {
+    if (!confirm(`Delete forwarder #${id}?`)) return;
+    await fetch(`/api/log-forwarders/${id}`, { method: 'DELETE' });
+    loadForwarders();
+}
+
+function closeFwdModal() { document.getElementById('fwdModal').classList.add('hidden'); }
+document.getElementById('fwdModal').addEventListener('click', function(e) { if (e.target === this) closeFwdModal(); });
+
+loadForwarders();
+</script>
+}

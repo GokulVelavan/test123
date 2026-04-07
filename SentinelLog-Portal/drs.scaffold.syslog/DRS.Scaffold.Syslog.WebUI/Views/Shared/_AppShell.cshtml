@@ -1,0 +1,109 @@
+@* Shared sidebar + topbar shell used by Dashboard, Sources, Settings views. *@
+@{
+    var controller = ViewContext.RouteData.Values["controller"]?.ToString() ?? "";
+    var action     = ViewContext.RouteData.Values["action"]?.ToString()     ?? "";
+
+    string Nav(string ctrl, string? act = null) =>
+        act == null
+            ? (controller.Equals(ctrl, StringComparison.OrdinalIgnoreCase) ? "nav-item active" : "nav-item")
+            : (controller.Equals(ctrl, StringComparison.OrdinalIgnoreCase) && action.Equals(act, StringComparison.OrdinalIgnoreCase) ? "nav-item active" : "nav-item");
+}
+
+<nav class="sidebar">
+    <div class="logo">
+        <div class="logo-icon">&#x26A1;</div>
+        <div class="logo-text">Sentinel<span>Log</span></div>
+    </div>
+
+    <div class="nav-section">
+        <div class="nav-label">Monitor</div>
+        <a class="@Nav("Dashboard","Index")" asp-controller="Dashboard" asp-action="Index">
+            <span class="icon">&#x25FC;</span> Overview
+        </a>
+        <a class="@Nav("Dashboard","LiveFeed")" asp-controller="Dashboard" asp-action="LiveFeed">
+            <span class="icon">&#x25B6;</span> Live Feed
+        </a>
+    </div>
+
+    <div class="nav-section">
+        <div class="nav-label">Investigate</div>
+        <a class="@Nav("Dashboard","Search")" asp-controller="Dashboard" asp-action="Search">
+            <span class="icon">&#x2315;</span> Log Search
+        </a>
+        <a class="@Nav("Dashboard","Analytics")" asp-controller="Dashboard" asp-action="Analytics">
+            <span class="icon">&#x2197;</span> Analytics
+        </a>
+        <a class="@Nav("ThreatIntel")" asp-controller="ThreatIntel" asp-action="Index">
+            <span class="icon">&#x26A0;</span> Threat Intel
+        </a>
+        <a class="@Nav("Anomaly")" asp-controller="Anomaly" asp-action="Index">
+            <span class="icon">&#x223F;</span> Anomaly Detection
+        </a>
+        <a class="@Nav("Reports")" asp-controller="Reports" asp-action="Scheduled">
+            <span class="icon">&#x1F4CB;</span> Reports
+        </a>
+    </div>
+
+    <div class="nav-section">
+        <div class="nav-label">Respond</div>
+        <a class="@Nav("Incidents")" asp-controller="Incidents" asp-action="Index">
+            <span class="icon">&#x1F6A8;</span> Incidents
+            <span class="nav-badge" id="navBadgeIncidents" style="display:none"></span>
+        </a>
+        <a class="@Nav("Dashboard","Alerts")" asp-controller="Dashboard" asp-action="Alerts">
+            <span class="icon">&#x25CE;</span> Alerts
+            <span class="nav-badge" id="navBadgeAlerts" style="display:none"></span>
+        </a>
+    </div>
+
+    <div class="nav-section">
+        <div class="nav-label">Configure</div>
+        <a class="@Nav("Dashboard","Storage")" asp-controller="Dashboard" asp-action="Storage">
+            <span class="icon">&#x25A6;</span> Storage
+        </a>
+        <a class="@Nav("Sources")" asp-controller="Sources" asp-action="Index">
+            <span class="icon">&#x229E;</span> Sources
+        </a>
+        <a class="@Nav("LogForwarders")" asp-controller="LogForwarders" asp-action="Index">
+            <span class="icon">&#x21C4;</span> Log Forwarding
+        </a>
+        <a class="@Nav("Settings")" asp-controller="Settings" asp-action="General">
+            <span class="icon">&#x2699;</span> Settings
+        </a>
+    </div>
+
+    <div class="sidebar-footer">
+        <div class="avatar">@ViewBag.Initials</div>
+        <div class="user-info">
+            <div class="user-name">@ViewBag.FullName</div>
+            <div class="user-role">@ViewBag.Role</div>
+        </div>
+        <form asp-controller="Auth" asp-action="Logout" method="post" style="margin:0">
+            @Html.AntiForgeryToken()
+            <button type="submit" title="Sign out"
+                    style="background:none;border:none;color:var(--text-muted);cursor:pointer;font-size:16px;padding:4px;line-height:1">&#x2192;</button>
+        </form>
+    </div>
+</nav>
+<script>
+(async function loadNavBadges() {
+    try {
+        const [alertRes, incidentRes] = await Promise.all([
+            fetch('/api/alerts/summary'),
+            fetch('/api/incidents/summary')
+        ]);
+        if (alertRes.ok) {
+            const a = await alertRes.json();
+            const count = a.unacknowledgedCount ?? 0;
+            const el = document.getElementById('navBadgeAlerts');
+            if (el && count > 0) { el.textContent = count; el.style.display = ''; }
+        }
+        if (incidentRes.ok) {
+            const i = await incidentRes.json();
+            const open = i.totalOpen ?? 0;
+            const el = document.getElementById('navBadgeIncidents');
+            if (el && open > 0) { el.textContent = open; el.style.display = ''; }
+        }
+    } catch {}
+})();
+</script>

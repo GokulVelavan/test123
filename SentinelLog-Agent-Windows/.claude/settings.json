@@ -1,0 +1,9 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(Start-Process \"d:/SyslogAgent-Desktop/publish/SyslogAgent.Desktop.exe\")",
+      "Bash(cmd.exe /c start \"\" \"d:\\\\SyslogAgent-Desktop\\\\publish\\\\SyslogAgent.Desktop.exe\")",
+      "Bash(./SyslogAgent.Desktop.exe)"
+    ]
+  }
+}

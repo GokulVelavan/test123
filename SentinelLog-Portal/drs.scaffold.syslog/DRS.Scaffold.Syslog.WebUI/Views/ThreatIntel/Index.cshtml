@@ -1,0 +1,386 @@
+@{
+    Layout = "_AppLayout";
+    ViewData["Title"] = "Threat Intelligence";
+    ViewData["TopbarMeta"] = "IOC management — IPs, domains, hashes, URLs";
+}
+<div style="padding:20px;display:flex;flex-direction:column;gap:16px">
+
+    @* ── Summary KPIs ──────────────────────────────────────────────────────── *@
+    <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:12px">
+        <div class="kpi-card"><div class="kpi-label">Total IOCs</div><div class="kpi-value" id="kpiTotal">—</div></div>
+        <div class="kpi-card"><div class="kpi-label">Active</div><div class="kpi-value" style="color:var(--sev-error)" id="kpiActive">—</div></div>
+        <div class="kpi-card"><div class="kpi-label">IP Indicators</div><div class="kpi-value" style="color:var(--accent-cyan)" id="kpiIp">—</div></div>
+        <div class="kpi-card"><div class="kpi-label">Domain IOCs</div><div class="kpi-value" id="kpiDomain">—</div></div>
+        <div class="kpi-card"><div class="kpi-label">File Hashes</div><div class="kpi-value" id="kpiHash">—</div></div>
+    </div>
+
+    @* ── IP / IOC Lookup ───────────────────────────────────────────────────── *@
+    <div class="panel">
+        <div class="panel-header"><div class="panel-title">&#x1F50D; Quick IOC Lookup</div></div>
+        <div style="padding:16px;display:flex;gap:10px;align-items:center">
+            <input class="form-control" id="lookupVal" placeholder="Enter IP, domain, or hash to check…" style="flex:1;max-width:500px" onkeydown="if(event.key==='Enter')checkIoc()" />
+            <button class="btn btn-accent btn-sm" onclick="checkIoc()">Check</button>
+        </div>
+        <div id="lookupResult" style="padding:0 16px 16px;display:none"></div>
+    </div>
+
+    @* ── Indicator List ────────────────────────────────────────────────────── *@
+    <div class="panel">
+        <div class="panel-header">
+            <div class="panel-title">Threat Indicators</div>
+            <div class="panel-controls">
+                <select class="select-sm" id="filterType" onchange="loadIndicators()">
+                    <option value="">All Types</option>
+                    <option value="IP">IP Address</option>
+                    <option value="Domain">Domain</option>
+                    <option value="Hash">File Hash</option>
+                    <option value="URL">URL</option>
+                    <option value="Email">Email</option>
+                </select>
+                <select class="select-sm" id="filterActive" onchange="loadIndicators()">
+                    <option value="">All</option>
+                    <option value="true">Active</option>
+                    <option value="false">Inactive</option>
+                </select>
+                <button class="btn btn-sm" style="border:1px solid var(--border);background:transparent;color:var(--text-secondary)" onclick="openImportModal()">&#8593; Import CSV</button>
+                <button class="btn btn-accent btn-sm" onclick="openCreateModal()">&#43; Add IOC</button>
+            </div>
+        </div>
+        <table class="data-table">
+            <thead><tr><th>Type</th><th>Value</th><th>Category</th><th>Confidence</th><th>Source</th><th>Status</th><th>Expires</th><th>Actions</th></tr></thead>
+            <tbody id="iocTbody"><tr><td colspan="8" style="color:var(--text-muted);text-align:center">Loading…</td></tr></tbody>
+        </table>
+        <div id="iocPager" style="display:flex;gap:8px;padding:12px 16px;align-items:center;border-top:1px solid var(--border)"></div>
+    </div>
+
+</div>
+
+@* ── Create / Edit Modal ─────────────────────────────────────────────────────── *@
+<div class="modal-overlay hidden" id="iocModal">
+    <div class="modal-box" style="max-width:540px">
+        <div class="modal-header">
+            <div class="modal-title" id="iocModalTitle">Add IOC</div>
+            <button class="modal-close" onclick="closeIocModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <div style="display:grid;grid-template-columns:1fr 2fr;gap:12px">
+                <div class="form-row">
+                    <label class="form-label">Type</label>
+                    <select class="form-select" id="iocType">
+                        <option value="IP">IP Address</option>
+                        <option value="Domain">Domain</option>
+                        <option value="Hash">File Hash</option>
+                        <option value="URL">URL</option>
+                        <option value="Email">Email</option>
+                    </select>
+                </div>
+                <div class="form-row">
+                    <label class="form-label">Value *</label>
+                    <input class="form-input" id="iocValue" placeholder="192.168.1.1 / evil.com / sha256hash…" />
+                </div>
+            </div>
+            <div class="form-row-2">
+                <div class="form-row">
+                    <label class="form-label">Threat Category</label>
+                    <select class="form-select" id="iocCategory">
+                        <option value="">— Select —</option>
+                        <option value="Malware">Malware</option>
+                        <option value="Phishing">Phishing</option>
+                        <option value="BotNet">Botnet</option>
+                        <option value="Scanner">Scanner</option>
+                        <option value="TOR">TOR Exit Node</option>
+                        <option value="Proxy">Open Proxy</option>
+                        <option value="Spam">Spam</option>
+                        <option value="Ransomware">Ransomware</option>
+                        <option value="APT">APT</option>
+                        <option value="Other">Other</option>
+                    </select>
+                </div>
+                <div class="form-row">
+                    <label class="form-label">Confidence (0–100)</label>
+                    <input class="form-input" type="number" id="iocConfidence" value="80" min="0" max="100" />
+                </div>
+            </div>
+            <div class="form-row">
+                <label class="form-label">Source Feed / Origin</label>
+                <input class="form-input" id="iocSource" placeholder="AbuseIPDB, AlienVault OTX, Manual…" />
+            </div>
+            <div class="form-row">
+                <label class="form-label">Description</label>
+                <textarea class="form-textarea" id="iocDesc" placeholder="Brief description of the threat…"></textarea>
+            </div>
+            <div class="form-row-2">
+                <div class="form-row">
+                    <label class="form-label">Expires At (optional)</label>
+                    <input class="form-input" type="date" id="iocExpires" />
+                </div>
+                <div class="form-row" style="justify-content:flex-end">
+                    <div class="toggle-wrap" style="padding-top:18px">
+                        <label class="toggle-switch"><input type="checkbox" id="iocActive" checked><span class="toggle-slider"></span></label>
+                        <span class="form-label" style="text-transform:none;letter-spacing:0">Active</span>
+                    </div>
+                </div>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-ghost btn-sm" onclick="closeIocModal()">Cancel</button>
+            <button class="btn btn-accent btn-sm" id="iocSaveBtn" onclick="saveIoc()">Add IOC</button>
+        </div>
+    </div>
+</div>
+
+@* ── Import Modal ────────────────────────────────────────────────────────────── *@
+<div class="modal-overlay hidden" id="importModal">
+    <div class="modal-box" style="max-width:560px">
+        <div class="modal-header">
+            <div class="modal-title">Bulk Import IOCs — CSV</div>
+            <button class="modal-close" onclick="closeImportModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <div style="font-size:12px;color:var(--text-muted)">
+                CSV format: <code style="color:var(--accent-cyan)">Type,Value,ThreatCategory,Confidence,Source,Description</code><br/>
+                Example: <code>IP,1.2.3.4,Malware,90,AbuseIPDB,Known C2 server</code><br/>
+                Supported types: <strong>IP · Domain · Hash · URL · Email</strong>
+            </div>
+            <div class="form-row">
+                <textarea class="form-textarea" id="importCsv" style="min-height:160px" placeholder="Type,Value,ThreatCategory,Confidence,Source,Description&#10;IP,1.2.3.4,Malware,90,AbuseIPDB,Known C2&#10;Domain,evil.com,Phishing,75,Custom,"></textarea>
+            </div>
+            <div class="form-row">
+                <label class="form-label">Default Source (for rows without source column)</label>
+                <input class="form-input" id="importSource" value="Bulk Import" />
+            </div>
+            <div id="importResult" style="display:none"></div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-ghost btn-sm" onclick="closeImportModal()">Cancel</button>
+            <button class="btn btn-accent btn-sm" onclick="runImport()">&#8593; Import</button>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+function esc(s) { var d = document.createElement('div'); d.textContent = String(s ?? ''); return d.innerHTML; }
+
+var _iocPage = 1, _iocPageSize = 50, _iocEditId = null;
+
+async function loadSummary() {
+    try {
+        const r = await fetch('/api/threat-intel/summary');
+        if (!r.ok) return;
+        const d = await r.json();
+        document.getElementById('kpiTotal').textContent  = d.totalIndicators  ?? 0;
+        document.getElementById('kpiActive').textContent = d.activeIndicators ?? 0;
+        document.getElementById('kpiIp').textContent     = d.ipIndicators     ?? 0;
+        document.getElementById('kpiDomain').textContent = d.domainIndicators ?? 0;
+        document.getElementById('kpiHash').textContent   = d.hashIndicators   ?? 0;
+    } catch {}
+}
+
+async function checkIoc() {
+    const val = document.getElementById('lookupVal').value.trim();
+    if (!val) return;
+    const resultDiv = document.getElementById('lookupResult');
+    resultDiv.style.display = 'block';
+    resultDiv.innerHTML = '<span style="color:var(--text-muted)">Checking…</span>';
+    try {
+        const r = await fetch('/api/threat-intel/check?value=' + encodeURIComponent(val));
+        if (!r.ok) { resultDiv.innerHTML = '<span style="color:var(--sev-error)">Check failed.</span>'; return; }
+        const d = await r.json();
+        if (d.isMatched) {
+            resultDiv.innerHTML = `
+                <div style="background:var(--sev-error)18;border:1px solid var(--sev-error)44;border-radius:6px;padding:12px;margin-bottom:8px">
+                    <div style="color:var(--sev-error);font-weight:600;margin-bottom:8px">&#x26A0; THREAT MATCH — <span class="mono">${esc(val)}</span></div>
+                    ${d.matches.map(m => `
+                        <div style="background:var(--bg-elevated);border-radius:4px;padding:8px;margin-top:6px;font-size:12px">
+                            <span style="color:var(--sev-error);font-weight:600">${esc(m.type)}</span> &bull;
+                            <span style="color:var(--text-secondary)">${esc(m.threatCategory || 'Unknown')}</span> &bull;
+                            Confidence: <span style="color:var(--accent-cyan)">${m.confidence}%</span> &bull;
+                            Source: ${esc(m.source || 'Unknown')}
+                            ${m.description ? `<div style="color:var(--text-muted);margin-top:4px">${esc(m.description)}</div>` : ''}
+                        </div>`).join('')}
+                </div>`;
+        } else {
+            resultDiv.innerHTML = `<div style="background:var(--sev-notice)18;border:1px solid var(--sev-notice)44;border-radius:6px;padding:12px;color:var(--sev-notice);font-weight:600">&#x2713; Clean — No threats found for <span class="mono">${esc(val)}</span></div>`;
+        }
+    } catch { resultDiv.innerHTML = '<span style="color:var(--sev-error)">Network error.</span>'; }
+}
+
+async function loadIndicators() {
+    const type   = document.getElementById('filterType').value;
+    const active = document.getElementById('filterActive').value;
+    let url = `/api/threat-intel?page=${_iocPage}&pageSize=${_iocPageSize}`;
+    if (type)   url += `&type=${encodeURIComponent(type)}`;
+    if (active) url += `&active=${active}`;
+
+    const tbody = document.getElementById('iocTbody');
+    tbody.innerHTML = `<tr><td colspan="8" style="color:var(--text-muted);text-align:center">Loading…</td></tr>`;
+
+    try {
+        const r = await fetch(url);
+        if (!r.ok) { tbody.innerHTML = `<tr><td colspan="8" style="color:var(--sev-error);text-align:center">Failed.</td></tr>`; return; }
+        const d = await r.json();
+
+        if (!d.items?.length) {
+            tbody.innerHTML = `<tr><td colspan="8" style="color:var(--text-muted);text-align:center">No indicators found.</td></tr>`;
+            renderIocPager(0); return;
+        }
+
+        tbody.innerHTML = d.items.map(i => `
+            <tr>
+                <td><span class="sev-badge" style="background:var(--accent-cyan)22;color:var(--accent-cyan)">${esc(i.type)}</span></td>
+                <td class="mono" style="font-size:12px;color:var(--text-primary);max-width:250px;word-break:break-all">${esc(i.value)}</td>
+                <td style="color:var(--sev-warning);font-size:12px">${esc(i.threatCategory || '—')}</td>
+                <td>
+                    <div style="display:flex;align-items:center;gap:6px">
+                        <div style="flex:1;height:4px;background:var(--bg-elevated);border-radius:2px;min-width:60px">
+                            <div style="height:4px;border-radius:2px;background:${i.confidence >= 80 ? 'var(--sev-error)' : i.confidence >= 50 ? 'var(--sev-warning)' : 'var(--sev-notice)'};width:${i.confidence}%"></div>
+                        </div>
+                        <span style="font-size:11px;color:var(--text-muted)">${i.confidence}%</span>
+                    </div>
+                </td>
+                <td style="font-size:12px;color:var(--text-muted)">${esc(i.source || '—')}</td>
+                <td><span style="color:${i.isActive ? 'var(--sev-notice)' : 'var(--text-muted)'};font-size:12px;font-weight:600">${i.isActive ? 'Active' : 'Inactive'}</span></td>
+                <td style="font-size:11px;color:var(--text-muted)">${i.expiresAt ? new Date(i.expiresAt).toLocaleDateString() : '—'}</td>
+                <td>
+                    <button class="btn btn-sm" style="font-size:11px;padding:3px 8px;background:transparent;border:1px solid var(--border);color:var(--accent-cyan)" onclick="editIoc(${i.id})">Edit</button>
+                    <button class="btn btn-sm" style="font-size:11px;padding:3px 8px;background:transparent;border:1px solid var(--border);color:var(--sev-error);margin-left:4px" onclick="deleteIoc(${i.id})">Delete</button>
+                </td>
+            </tr>`).join('');
+
+        renderIocPager(d.totalCount || 0);
+    } catch { tbody.innerHTML = `<tr><td colspan="8" style="color:var(--sev-error);text-align:center">Network error.</td></tr>`; }
+}
+
+function renderIocPager(total) {
+    const totalPages = Math.ceil(total / _iocPageSize) || 1;
+    document.getElementById('iocPager').innerHTML = `
+        <span style="font-size:12px;color:var(--text-muted);flex:1">${total} indicators</span>
+        <button class="btn btn-sm" style="font-size:11px" onclick="changeIocPage(${_iocPage-1})" ${_iocPage<=1?'disabled':''}>&#8249; Prev</button>
+        <span style="font-size:12px;color:var(--text-muted)">Page ${_iocPage} of ${totalPages}</span>
+        <button class="btn btn-sm" style="font-size:11px" onclick="changeIocPage(${_iocPage+1})" ${_iocPage>=totalPages?'disabled':''}>Next &#8250;</button>`;
+}
+
+function changeIocPage(p) { _iocPage = p; loadIndicators(); }
+
+function openCreateModal() {
+    _iocEditId = null;
+    document.getElementById('iocModalTitle').textContent = 'Add IOC';
+    document.getElementById('iocSaveBtn').textContent = 'Add IOC';
+    ['iocValue','iocSource','iocDesc','iocExpires'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('iocType').value       = 'IP';
+    document.getElementById('iocCategory').value   = '';
+    document.getElementById('iocConfidence').value = '80';
+    document.getElementById('iocActive').checked   = true;
+    document.getElementById('iocModal').classList.remove('hidden');
+}
+
+async function editIoc(id) {
+    try {
+        const r = await fetch(`/api/threat-intel/${id}`);
+        if (!r.ok) return;
+        const d = await r.json();
+        _iocEditId = id;
+        document.getElementById('iocModalTitle').textContent = `Edit IOC #${id}`;
+        document.getElementById('iocSaveBtn').textContent = 'Save Changes';
+        document.getElementById('iocType').value       = d.type       || 'IP';
+        document.getElementById('iocValue').value      = d.value      || '';
+        document.getElementById('iocCategory').value   = d.threatCategory || '';
+        document.getElementById('iocConfidence').value = d.confidence ?? 80;
+        document.getElementById('iocSource').value     = d.source     || '';
+        document.getElementById('iocDesc').value       = d.description|| '';
+        document.getElementById('iocActive').checked   = d.isActive   ?? true;
+        document.getElementById('iocExpires').value    = d.expiresAt ? d.expiresAt.split('T')[0] : '';
+        document.getElementById('iocModal').classList.remove('hidden');
+    } catch {}
+}
+
+async function saveIoc() {
+    const btn = document.getElementById('iocSaveBtn');
+    btn.disabled = true;
+    try {
+        let r;
+        if (_iocEditId) {
+            const body = {
+                threatCategory: document.getElementById('iocCategory').value || null,
+                confidence:     parseInt(document.getElementById('iocConfidence').value),
+                source:         document.getElementById('iocSource').value.trim() || null,
+                description:    document.getElementById('iocDesc').value.trim()   || null,
+                isActive:       document.getElementById('iocActive').checked,
+                expiresAt:      document.getElementById('iocExpires').value || null
+            };
+            r = await fetch(`/api/threat-intel/${_iocEditId}`, { method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+        } else {
+            const body = {
+                type:           document.getElementById('iocType').value,
+                value:          document.getElementById('iocValue').value.trim(),
+                threatCategory: document.getElementById('iocCategory').value || null,
+                confidence:     parseInt(document.getElementById('iocConfidence').value),
+                source:         document.getElementById('iocSource').value.trim() || null,
+                description:    document.getElementById('iocDesc').value.trim()   || null,
+                isActive:       document.getElementById('iocActive').checked,
+                expiresAt:      document.getElementById('iocExpires').value || null
+            };
+            if (!body.value) { alert('Value is required.'); btn.disabled = false; return; }
+            r = await fetch('/api/threat-intel', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+        }
+        if (!r.ok) { alert('Save failed (HTTP ' + r.status + '). Check API logs.'); btn.disabled = false; return; }
+        closeIocModal();
+        loadSummary();
+        loadIndicators();
+    } catch (err) {
+        alert('Network error: ' + err.message);
+    } finally {
+        btn.disabled = false;
+    }
+}
+
+async function deleteIoc(id) {
+    if (!confirm(`Delete indicator #${id}?`)) return;
+    const r = await fetch(`/api/threat-intel/${id}`, { method: 'DELETE' });
+    if (!r.ok) { alert('Delete failed (HTTP ' + r.status + ').'); return; }
+    closeIocModal();
+    loadSummary();
+    loadIndicators();
+}
+
+function closeIocModal() { document.getElementById('iocModal').classList.add('hidden'); }
+document.getElementById('iocModal').addEventListener('click', function(e) { if (e.target === this) closeIocModal(); });
+
+function openImportModal() { document.getElementById('importModal').classList.remove('hidden'); document.getElementById('importResult').style.display = 'none'; }
+function closeImportModal() { document.getElementById('importModal').classList.add('hidden'); }
+document.getElementById('importModal').addEventListener('click', function(e) { if (e.target === this) closeImportModal(); });
+
+async function runImport() {
+    const csv = document.getElementById('importCsv').value.trim();
+    const src = document.getElementById('importSource').value.trim();
+    const res = document.getElementById('importResult');
+    if (!csv) { alert('Paste CSV content first.'); return; }
+    res.style.display = '';
+    res.innerHTML = '<span style="color:var(--text-muted)">Importing…</span>';
+    try {
+        const r = await fetch('/api/threat-intel/import/csv', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ csvContent: csv, defaultSource: src })
+        });
+        const d = await r.json();
+        if (r.ok) {
+            res.innerHTML = `<div style="color:var(--sev-notice);font-weight:600">✓ Imported ${d.imported} indicator(s)${d.skipped > 0 ? ` (${d.skipped} skipped)` : ''}.</div>`;
+            loadSummary(); loadIndicators();
+        } else {
+            res.innerHTML = `<div style="color:var(--sev-error)">Import failed.</div>`;
+        }
+    } catch { res.innerHTML = `<div style="color:var(--sev-error)">Network error.</div>`; }
+}
+
+loadSummary();
+loadIndicators();
+
+setInterval(function() {
+    if (!document.getElementById('iocModal').classList.contains('hidden')) return;
+    if (!document.getElementById('importModal').classList.contains('hidden')) return;
+    loadSummary();
+    loadIndicators();
+}, 30000);
+</script>
+}

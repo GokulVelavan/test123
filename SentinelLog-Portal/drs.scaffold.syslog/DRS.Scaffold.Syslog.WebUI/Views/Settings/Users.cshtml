@@ -1,0 +1,224 @@
+@model UsersManagementViewModel
+@{
+    Layout = "_AppLayout";
+    ViewData["Title"] = "Settings &middot; Users";
+    ViewData["TopbarMeta"] = "Manage platform user accounts";
+}
+
+<!-- Assign Roles Modal (#94) -->
+<div class="modal-overlay hidden" id="rolesModal">
+    <div class="modal-box" style="max-width:420px">
+        <div class="modal-header">
+            <div class="modal-title">Assign Roles — <span id="rolesModalUsername"></span></div>
+            <button class="modal-close" onclick="closeRolesModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <div id="rolesModalError" class="alert-bar error" style="display:none"><span>&#x26A0;</span> <span id="rolesModalErrorMsg"></span></div>
+            <p style="color:var(--text-muted);font-size:13px;margin-bottom:10px">Select roles to assign to this user.</p>
+            <div id="rolesCheckboxList" style="display:flex;flex-direction:column;gap:8px"></div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-ghost btn-sm" onclick="closeRolesModal()">Cancel</button>
+            <button class="btn btn-accent btn-sm" id="rolesSubmitBtn" onclick="submitRoles()">Save Roles</button>
+        </div>
+    </div>
+</div>
+
+<!-- Invite User Modal -->
+<div class="modal-overlay hidden" id="inviteUserModal">
+    <div class="modal-box">
+        <div class="modal-header">
+            <div class="modal-title">+ Invite User</div>
+            <button class="modal-close" onclick="closeInviteModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <div id="inviteModalError" class="alert-bar error" style="display:none"><span>&#x26A0;</span> <span id="inviteModalErrorMsg"></span></div>
+            <div class="form-row">
+                <label class="form-label">Username *</label>
+                <input class="form-input" id="inviteUsername" placeholder="e.g. jsmith" autocomplete="off">
+            </div>
+            <div class="form-row">
+                <label class="form-label">Full Name</label>
+                <input class="form-input" id="inviteFullName" placeholder="e.g. John Smith">
+            </div>
+            <div class="form-row">
+                <label class="form-label">Email *</label>
+                <input class="form-input" id="inviteEmail" type="email" placeholder="user@example.com">
+            </div>
+            <div class="form-row">
+                <label class="form-label">Password *</label>
+                <input class="form-input" id="invitePassword" type="password" placeholder="Temporary password" autocomplete="new-password">
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-ghost btn-sm" onclick="closeInviteModal()">Cancel</button>
+            <button class="btn btn-accent btn-sm" id="inviteSubmitBtn" onclick="submitInviteUser()">Create User</button>
+        </div>
+    </div>
+</div>
+
+@await Html.PartialAsync("_SettingsNav")
+<div style="padding:20px;display:flex;flex-direction:column;gap:16px">
+
+    @if (Model.Error is not null)
+    {
+        <div class="alert-bar error"><span>&#9888;</span> @Model.Error</div>
+    }
+    @if (Model.Notice is not null)
+    {
+        <div class="alert-bar success"><span>&#10003;</span> @Model.Notice</div>
+    }
+
+    <div class="panel">
+        <div class="panel-header">
+            <div class="panel-title">Users</div>
+            <div class="panel-controls">
+                <button class="btn btn-accent btn-sm" onclick="openInviteModal()">+ Invite User</button>
+            </div>
+        </div>
+        <table class="user-table">
+            <thead>
+                <tr>
+                    <th>Username</th><th>Full Name</th><th>Email</th>
+                    <th>Roles</th><th>MFA</th><th>Status</th><th>Last Login</th><th></th>
+                </tr>
+            </thead>
+            <tbody>
+                @foreach (var u in Model.Users)
+                {
+                    <tr>
+                        <td class="mono">@u.Username</td>
+                        <td>@u.FullName</td>
+                        <td style="color:var(--text-muted)">@u.Email</td>
+                        <td>
+                            <span style="font-size:12px">@(u.Roles.Any() ? string.Join(", ", u.Roles) : "—")</span>
+                            <button class="btn btn-ghost btn-sm" style="font-size:11px;padding:2px 6px;margin-left:4px"
+                                    onclick="openRolesModal(@u.Id, @Html.Raw(System.Text.Json.JsonSerializer.Serialize(u.Username)), [@Html.Raw(string.Join(",", u.Roles.Select(r => "\"" + r + "\"")))  ])">
+                                Edit
+                            </button>
+                        </td>
+                        <td>
+                            @if (u.MfaEnabled)
+                            {
+                                <span style="color:var(--sev-notice);font-size:12px">&#10003; On</span>
+                            }
+                            else
+                            {
+                                <span style="color:var(--text-muted);font-size:12px">Off</span>
+                            }
+                        </td>
+                        <td>
+                            @if (u.Active)
+                            {
+                                <span style="color:var(--sev-notice)">Active</span>
+                            }
+                            else
+                            {
+                                <span style="color:var(--text-muted)">Inactive</span>
+                            }
+                        </td>
+                        <td class="mono" style="color:var(--text-muted)">@(u.LastLogin?.ToString("yyyy-MM-dd HH:mm") ?? "Never")</td>
+                        <td>
+                            <form asp-action="DeleteUser" asp-route-id="@u.Id" method="post" style="display:inline"
+                                  onsubmit="return confirm('Delete user @u.Username?')">
+                                @Html.AntiForgeryToken()
+                                <button type="submit" class="btn btn-danger btn-sm">Delete</button>
+                            </form>
+                        </td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+
+</div>
+
+@section Scripts {
+<script>
+function openInviteModal() {
+    document.getElementById('inviteModalError').style.display = 'none';
+    ['inviteUsername','inviteFullName','inviteEmail','invitePassword'].forEach(id => {
+        document.getElementById(id).value = '';
+    });
+    document.getElementById('inviteUserModal').classList.remove('hidden');
+    document.getElementById('inviteUsername').focus();
+}
+
+function closeInviteModal() {
+    document.getElementById('inviteUserModal').classList.add('hidden');
+}
+
+async function submitInviteUser() {
+    const username = document.getElementById('inviteUsername').value.trim();
+    const email    = document.getElementById('inviteEmail').value.trim();
+    const password = document.getElementById('invitePassword').value;
+    const fullName = document.getElementById('inviteFullName').value.trim();
+    if (!username) { showInviteError('Username is required.'); return; }
+    if (!email)    { showInviteError('Email is required.'); return; }
+    if (!password) { showInviteError('Password is required.'); return; }
+    const btn = document.getElementById('inviteSubmitBtn');
+    btn.disabled = true; btn.textContent = 'Creating…';
+    try {
+        const r = await fetch('/api/users', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ username, email, password, fullName: fullName || null })
+        });
+        if (!r.ok) { const t = await r.text(); showInviteError(t || 'Failed to create user.'); return; }
+        closeInviteModal();
+        window.location.reload();
+    } catch { showInviteError('Network error.'); }
+    finally { btn.disabled = false; btn.textContent = 'Create User'; }
+}
+
+function showInviteError(msg) {
+    const bar = document.getElementById('inviteModalError');
+    document.getElementById('inviteModalErrorMsg').textContent = msg;
+    bar.style.display = 'flex';
+}
+
+document.getElementById('inviteUserModal').addEventListener('click', function(e) { if (e.target === this) closeInviteModal(); });
+
+/* ── Role assignment modal (#94) ────────────────────────── */
+const AVAILABLE_ROLES = ['Admin', 'Analyst', 'Viewer', 'Operator'];
+var rolesUserId = null;
+
+function openRolesModal(userId, username, currentRoles) {
+    rolesUserId = userId;
+    document.getElementById('rolesModalUsername').textContent = username;
+    document.getElementById('rolesModalError').style.display = 'none';
+    const list = document.getElementById('rolesCheckboxList');
+    list.innerHTML = AVAILABLE_ROLES.map(r => `
+        <label style="display:flex;align-items:center;gap:8px;color:var(--text-primary);cursor:pointer">
+            <input type="checkbox" value="${r}" ${currentRoles.includes(r) ? 'checked' : ''}>
+            <span>${r}</span>
+        </label>`).join('');
+    document.getElementById('rolesModal').classList.remove('hidden');
+}
+
+function closeRolesModal() {
+    document.getElementById('rolesModal').classList.add('hidden');
+    rolesUserId = null;
+}
+
+async function submitRoles() {
+    if (!rolesUserId) return;
+    const roles = Array.from(document.querySelectorAll('#rolesCheckboxList input:checked')).map(c => c.value);
+    const btn = document.getElementById('rolesSubmitBtn');
+    btn.disabled = true; btn.textContent = 'Saving…';
+    try {
+        const r = await fetch('/api/users/' + rolesUserId + '/roles', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ roles })
+        });
+        if (!r.ok) { const t = await r.text(); document.getElementById('rolesModalErrorMsg').textContent = t || 'Failed to update roles.'; document.getElementById('rolesModalError').style.display = 'flex'; return; }
+        closeRolesModal();
+        window.location.reload();
+    } catch { document.getElementById('rolesModalErrorMsg').textContent = 'Network error.'; document.getElementById('rolesModalError').style.display = 'flex'; }
+    finally { btn.disabled = false; btn.textContent = 'Save Roles'; }
+}
+
+document.getElementById('rolesModal').addEventListener('click', function(e) { if (e.target === this) closeRolesModal(); });
+</script>
+}

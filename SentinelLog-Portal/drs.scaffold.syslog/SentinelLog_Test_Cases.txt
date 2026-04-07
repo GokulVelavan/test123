@@ -1,0 +1,402 @@
+================================================================================
+  SENTINELLOG — MODULE TEST GUIDE
+  Generated: 2026-03-31
+================================================================================
+
+
+================================================================================
+  1. LIVE FEED
+================================================================================
+Purpose : Real-time stream of incoming syslog events as they arrive.
+How it works : Polls /api/logs/live every few seconds, prepends new rows.
+
+  #    Scenario                  How to Trigger                        Expected
+  ---  ------------------------  ------------------------------------  --------------------------------
+  1.1  Feed loads on page open   Navigate to Live Feed                 Table populates, EPS counter shows
+  1.2  Pause / Resume            Click Pause button                    Rows stop; Resume restarts them
+  1.3  Severity filter           Click CRIT / ERR / WARN / INFO        Only matching severity rows appear
+  1.4  Search keyword            Type in search box                    Rows filter in real time
+  1.5  Source filter             Select a source from dropdown         Only that source's events show
+  1.6  Clear feed                Click Clear                           Table empties without page reload
+
+
+================================================================================
+  2. LOG SEARCH
+================================================================================
+Purpose : Historical search across all stored syslog events with filters and pagination.
+How it works : Sends filter params to /api/logs/search, returns paged results.
+
+  #    Scenario                  How to Trigger                        Expected
+  ---  ------------------------  ------------------------------------  --------------------------------
+  2.1  Basic keyword search      Type "failed" → click Search          Only logs containing "failed"
+  2.2  Date range filter         Set From/To date → Search             Only logs in that window
+  2.3  Severity filter           Select "Error" → Search               Only error-level logs
+  2.4  Source filter             Select a specific source → Search     Only that source's logs
+  2.5  Pagination                Navigate to page 2                    Next 50 results load
+  2.6  Empty result              Search "xyznonexistentstring"          "No results found" message
+  2.7  Export result             Click Export CSV                      CSV download starts
+
+
+================================================================================
+  3. DASHBOARD / OVERVIEW
+================================================================================
+Purpose : KPI summary — EPS, total events, active alerts, severity breakdown.
+How it works : Loads /api/logs/kpis and chart endpoints on open, auto-refreshes.
+
+  #    Scenario                  How to Trigger                        Expected
+  ---  ------------------------  ------------------------------------  --------------------------------
+  3.1  KPIs load                 Open Overview                         Total Events, EPS, Alerts shown
+  3.2  Severity chart loads      Open Overview                         Bar/donut chart renders
+  3.3  Top sources               Open Overview                         Top 5 sources table shows
+  3.4  Auto-refresh              Wait ~10 seconds                      Numbers update automatically
+
+
+================================================================================
+  4. ALERTS
+================================================================================
+Purpose : Define rules that fire when log patterns match; manage fired alert events.
+How it works : Rules stored in DB, worker evaluates on each poll cycle.
+              Fired events stored in alertevent table.
+
+  #    Scenario                  How to Trigger                        Expected
+  ---  ------------------------  ------------------------------------  --------------------------------
+  4.1  Create alert rule         Alerts → Rules → + New Rule          Rule appears in list
+                                 Fill name/severity/keyword → Save
+  4.2  Enable / Disable rule     Toggle the Enabled switch             Rule immediately active/inactive
+  4.3  View fired events         Click Events tab                      List of triggered alert events
+  4.4  Acknowledge event         Click Acknowledge on an event         Status → Acknowledged
+  4.5  Filter events by sev.     Select severity from dropdown         Only matching events show
+  4.6  Delete rule               Click Delete on a rule               Removed, no longer fires
+
+
+================================================================================
+  5. THREAT INTEL  *** RECENTLY FIXED — HTTP 500 on Add IOC is now resolved ***
+================================================================================
+Purpose : Manage IOC (Indicators of Compromise) — IPs, domains, hashes, URLs, emails.
+How it works : IOCs stored in threatindicator table.
+              Worker checks incoming log source IPs against active IOCs.
+
+  #    Scenario                  How to Trigger                        Expected
+  ---  ------------------------  ------------------------------------  --------------------------------
+  5.1  Add IP IOC                + Add IOC                             IOC appears in table
+                                 Type=IP, Value=1.2.3.4               KPI counters increment
+                                 Category=Malware, Conf=80 → Save
+  5.2  Add Domain IOC            Type=Domain, Value=evil.com           Domain IOC counter increments
+  5.3  Add Hash IOC              Type=Hash, Value=abc123...            File Hashes KPI increments
+  5.4  Lookup — MATCH            Enter 1.2.3.4 in lookup → Check      Red "THREAT MATCH" banner
+  5.5  Lookup — CLEAN            Enter 8.8.8.8 → Check                Green "Clean" banner
+  5.6  Edit IOC                  Click Edit → change confidence → Save Updated value in table
+  5.7  Deactivate IOC            Edit → uncheck Active → Save          Status shows Inactive
+  5.8  Delete IOC                Click Delete                          IOC removed from table
+  5.9  Import CSV                Click Import CSV, paste:              "Imported 1 indicator" message
+                                 IP,1.2.3.5,Malware,90,AbuseIPDB,Test
+                                 → Import
+  5.10 Filter by type            Select IP Address from type dropdown  Only IP IOCs show
+
+
+================================================================================
+  6. INCIDENTS
+================================================================================
+Purpose : Security case management — create/track incidents linked to alert events.
+How it works : Incidents stored in incident table.
+              Can be created manually or auto-triggered from anomaly rules.
+
+  #    Scenario                  How to Trigger                        Expected
+  ---  ------------------------  ------------------------------------  --------------------------------
+  6.1  Create incident           Incidents → + New Incident           Appears in list
+                                 Title, Priority=High, Status=Open → Save
+  6.2  Assign incident           Edit → Assignee → pick user           Assignee shows in row
+  6.3  Update status             Edit → Status=Investigating → Save    Status column updates
+  6.4  Resolve incident          Status=Resolved, fill ResolvedAt      Shows as Resolved
+  6.5  Filter by status          Filter dropdown → Open               Only open incidents
+  6.6  Filter by priority        Filter → High                         Only high priority incidents
+
+
+================================================================================
+  7. ANOMALY DETECTION
+================================================================================
+Purpose : Automatically detect unusual patterns — EPS spikes, new IPs, auth failures.
+How it works : AnomalyDetectionWorker runs on schedule, evaluates each enabled rule
+              against recent log data. Fires AnomalyEvent when threshold exceeded.
+
+  #    Scenario                  How to Trigger                        Expected
+  ---  ------------------------  ------------------------------------  --------------------------------
+  7.1  Create anomaly rule       Anomaly Detection → + New Rule       Rule appears enabled
+                                 Type=EpsTotal, Threshold=2.0 → Save
+  7.2  View fired events         Click Events tab                      List of anomaly events shown
+  7.3  Acknowledge event         Click Acknowledge                     Status updates
+  7.4  Disable rule              Toggle Enabled off                    Rule no longer evaluates
+  7.5  Auto-incident creation    Enable Auto-Create Incident on rule   When rule fires, Incident created
+
+
+================================================================================
+  8. REPORTS
+================================================================================
+Purpose : Generate compliance and audit reports — SOX, PCI, HIPAA, ISO 27001, GDPR.
+How it works : Queries log/alert data and formats into report views.
+              Scheduled reports run via ScheduledReportWorker.
+
+  #    Scenario                  How to Trigger                        Expected
+  ---  ------------------------  ------------------------------------  --------------------------------
+  8.1  Compliance overview       Reports → Compliance                  Framework cards show with scores
+  8.2  Generate report           Select framework → Generate           Report data renders on page
+  8.3  Export report             Click Export CSV / PDF                File download starts
+  8.4  Create scheduled report   Reports → Scheduled → + New          Appears in scheduled list
+                                 Fill name/schedule/format → Save
+  8.5  View scheduled list       Open Scheduled Reports                All reports shown with next run
+  8.6  Delete scheduled report   Click Delete                          Removed from list
+
+
+================================================================================
+  9. SOURCES (Log Sources)
+================================================================================
+Purpose : Register and manage syslog-emitting devices.
+How it works : Sources stored in source table.
+              Worker monitors LastSeen and updates status Online/Offline/Degraded.
+
+  #    Scenario                  How to Trigger                        Expected
+  ---  ------------------------  ------------------------------------  --------------------------------
+  9.1  Add source                Sources → + Add Source               Appears, Status=Pending
+                                 Fill Name/IP/Type → Save
+  9.2  Source goes Online        Actual syslog arrives from source IP  Status → Online (worker update)
+  9.3  Source goes Offline       No data for 5+ min                    Status → Offline
+  9.4  Edit source               Click Edit → change name → Save       Name updates
+  9.5  Delete source             Click Delete                          Removed from list
+  9.6  Source Groups             Sources → Groups → + New Group        Group created, sources assignable
+
+
+================================================================================
+  10. LOG FORWARDING
+================================================================================
+Purpose : Forward received syslog events to external SIEMs or collectors.
+How it works : LogForwarderWorker reads enabled forwarders from DB and relays
+              matching logs via UDP/TCP/TLS to target host:port.
+
+  #    Scenario                  How to Trigger                        Expected
+  ---  ------------------------  ------------------------------------  --------------------------------
+  10.1 Add forwarder             Log Forwarding → + New               Appears enabled in list
+                                 Fill Name/Protocol/Host/Port → Save
+  10.2 Edit forwarder            Click Edit → change port → Save       Updated in list
+  10.3 Enable / Disable          Toggle Enabled switch                 Worker starts/stops forwarding
+  10.4 Severity filter           Set SeverityFilter=Error,Critical     Only those levels forwarded
+  10.5 View stats                Check ForwardedCount/ErrorCount       Counts increment as logs flow
+  10.6 Delete forwarder          Click Delete                          Removed, forwarding stops
+
+
+================================================================================
+  11. SETTINGS
+================================================================================
+
+  --- 11a. Users ---
+
+  #    Scenario                  How to Trigger                        Expected
+  ---  ------------------------  ------------------------------------  --------------------------------
+  U1   Create user               Settings → Users → + New User        User appears in list
+  U2   Change role               Edit user → Role=Analyst → Save       Role updates
+  U3   Reset password            Edit → set new password → Save        User can login with new password
+  U4   Disable user              Edit → Active=false → Save            User cannot log in
+
+  --- 11b. API Keys ---
+
+  #    Scenario                  How to Trigger                        Expected
+  ---  ------------------------  ------------------------------------  --------------------------------
+  A1   Generate API key          Settings → API Keys → + Generate      Key shown once — copy it
+  A2   Revoke key                Click Revoke                          Key disabled
+
+  --- 11c. Notifications ---
+
+  #    Scenario                  How to Trigger                        Expected
+  ---  ------------------------  ------------------------------------  --------------------------------
+  N1   Add webhook channel       Settings → Notifications → + New     Channel saved
+                                 Type=Webhook, URL=your endpoint
+  N2   Add email channel         Type=Email, fill SMTP details         Channel saved
+  N3   Test channel              Click Test                            Test payload sent to endpoint
+  N4   Delete channel            Click Delete                          Removed
+
+  --- 11d. Platform Settings ---
+
+  #    Scenario                  How to Trigger                        Expected
+  ---  ------------------------  ------------------------------------  --------------------------------
+  P1   Change platform name      Settings → General → edit name → Save Name updates in topbar/header
+  P2   Change timezone           Edit Timezone → Save                  Persists on page reload
+  P3   Toggle audible alerts     Toggle → Save                         Setting persists on reload
+
+
+================================================================================
+  12. STORAGE
+================================================================================
+Purpose : View storage usage and manage data retention policies.
+
+  #    Scenario                  How to Trigger                        Expected
+  ---  ------------------------  ------------------------------------  --------------------------------
+  S1   View storage overview     Settings → Storage                    GB used, ingestion rate shown
+  S2   Create retention policy   + New Policy                          Policy saved
+                                 SourceType=firewall, Days=90 → Save
+  S3   Edit policy               Change retention days → Save          Updates immediately
+
+
+================================================================================
+  QUICK SMOKE TEST — FASTEST FULL-COVERAGE PATH
+================================================================================
+
+  Step  Action
+  ----  -----------------------------------------------------------------
+  1     Login → Dashboard loads (KPIs visible, no errors)
+  2     Live Feed → events streaming in real time
+  3     Log Search → search "error" → results appear
+  4     Alerts → create rule → appears in list
+  5     Threat Intel → Add IOC 1.2.3.4 → Lookup 1.2.3.4 → MATCH shows
+  6     Incidents → create incident → appears in list
+  7     Anomaly Detection → create rule → appears in list
+  8     Reports → Compliance → select framework → Generate → data renders
+  9     Reports → Scheduled → create scheduled report → appears in list
+  10    Log Forwarding → add forwarder → appears in list
+  11    Sources → add source → appears in list
+  12    Log Search → save search → reload → saved search still available
+  13    Reports → Exports → queue CSV export → status goes Pending → Completed
+  14    Settings → change platform name → Save → Reload → name persists
+  15    Settings → Storage → view usage → create retention policy → saved
+
+================================================================================
+  13. SAVED SEARCHES
+================================================================================
+Purpose : Bookmark frequently used log search queries for quick reuse.
+How it works : Saved searches stored in savedsearch table via /api/saved-searches.
+              Appear as quick-access items in the Log Search page bar.
+
+  #    Scenario                  How to Trigger                        Expected
+  ---  ------------------------  ------------------------------------  --------------------------------
+  SS1  Save a search             Log Search → run any search          "Save Search" button appears
+                                 → click Save → enter name → Save     Saved search stored
+  SS2  Load a saved search       Log Search → click saved search name  Filters pre-populated, results load
+  SS3  Private vs shared         Save with Shared=false                Other users cannot see it
+  SS4  Delete saved search       Manage Saved Searches → Delete        Removed from list
+  SS5  Saved search persists     Reload page → open saved search       Filters still intact
+
+
+================================================================================
+  14. EXPORT JOBS
+================================================================================
+Purpose : Queue and download bulk log exports without blocking the UI.
+How it works : Export jobs queued in exportjob table.
+              ExportJobWorker processes them in background, writes file, updates status.
+              Accessible at Reports → Exports.
+
+  #    Scenario                  How to Trigger                        Expected
+  ---  ------------------------  ------------------------------------  --------------------------------
+  EJ1  Queue a CSV export        Reports → Exports → + New Export     Job appears with Status=Pending
+                                 Format=CSV, date range → Submit
+  EJ2  Queue a JSON export       Format=JSON → Submit                  Job queued separately
+  EJ3  Queue a Syslog export     Format=Syslog → Submit               Job queued
+  EJ4  Job completes             Wait for worker to process            Status changes to Completed
+  EJ5  Download completed job    Click Download on completed job       File download starts
+  EJ6  Job auto-refreshes        Stay on Exports page                  Status updates without reload
+  EJ7  Failed job shows error    Submit with invalid range             Status=Failed, error message shown
+  EJ8  Delete completed job      Click Delete                          Removed from list
+
+
+================================================================================
+  15. EXTERNAL EVENT INJECTION  (End-to-End Trigger Testing)
+================================================================================
+Purpose : Feed test events into the pipeline from outside the application to
+          verify alerts, threat intel matching, anomaly detection, and source
+          discovery all fire correctly end-to-end.
+How it works : The worker polls the systemlogs table every 10 seconds.
+              Inserting rows directly into that table is the trigger point —
+              there is no separate UDP/TCP listener; the syslog collector
+              (NXLog) writes to the same table from real devices.
+
+  *** DATABASE CONNECTION ***
+  Host     : jsw-ams.c5pwstwpokkz.ap-south-1.rds.amazonaws.com
+  Database : Syslog
+  User     : postgres
+  Table    : systemlogs  (columns: id, log_datetime, host, program, pid, message, source_ip)
+
+  --- 15a. Quick SQL Inserts (psql / DBeaver / pgAdmin) ---
+
+  -- Triggers "Error Detected" alert rule
+  INSERT INTO systemlogs (log_datetime, host, program, pid, message, source_ip)
+  VALUES (NOW(), 'test-server-01', 'sshd', '1234',
+          '<3>error: authentication failure for admin', '192.168.1.50');
+
+  -- Triggers "Authentication Failure" alert rule (Critical)
+  INSERT INTO systemlogs (log_datetime, host, program, message, source_ip)
+  VALUES (NOW(), 'web-server', 'sshd', 'authentication failure: invalid user root', '10.0.0.5');
+
+  -- Triggers "Security Alert" rule
+  INSERT INTO systemlogs (log_datetime, host, program, message, source_ip)
+  VALUES (NOW(), 'dc-01', 'Security', 'Security audit policy changed', '192.168.1.10');
+
+  -- Triggers "SMT Unreachable" rule (Critical)
+  INSERT INTO systemlogs (log_datetime, host, program, message, source_ip)
+  VALUES (NOW(), 'relay-01', 'postfix', '<2>critical: cannot be reached smtp.relay.com', '10.0.2.1');
+
+  -- Triggers Threat Intel match (requires IOC IP 1.2.3.4 added first in Threat Intel page)
+  INSERT INTO systemlogs (log_datetime, host, program, message, source_ip)
+  VALUES (NOW(), '1.2.3.4', 'nginx', 'GET /admin HTTP/1.1 401', '1.2.3.4');
+
+  --- 15b. Python Script (repeatable / bulk) ---
+
+  import psycopg2
+  from datetime import datetime
+
+  conn = psycopg2.connect(
+      host="jsw-ams.c5pwstwpokkz.ap-south-1.rds.amazonaws.com",
+      dbname="Syslog", user="postgres",
+      password="u0MjCOVeTvx40ZhRBCV1"
+  )
+  cur = conn.cursor()
+
+  test_events = [
+      # (host,           program,    pid,   message,                                         source_ip)
+      ("web-01",         "nginx",    "100", "<3>error: upstream timeout",                   "10.0.1.1"),
+      ("db-server",      "postgres", "200", "authentication failure: password incorrect",   "10.0.1.2"),
+      ("firewall",       "iptables", None,  "connection refused from 203.0.113.5",          "10.0.1.3"),
+      ("mail-server",    "postfix",  "300", "critical: cannot be reached smtp.relay.com",   "10.0.1.4"),
+      ("1.2.3.4",        "sshd",     "400", "login attempt from malicious host",            "1.2.3.4"),
+  ]
+  for host, program, pid, message, ip in test_events:
+      cur.execute(
+          "INSERT INTO systemlogs (log_datetime,host,program,pid,message,source_ip) "
+          "VALUES (%s,%s,%s,%s,%s,%s)",
+          (datetime.utcnow(), host, program, pid, message, ip)
+      )
+  conn.commit(); cur.close(); conn.close()
+  print("Inserted. Worker picks up in ~10 seconds.")
+
+  --- 15c. Alert rule → message keyword mapping ---
+
+  #    Alert Rule              Keyword(s) to include in message
+  ---  ----------------------  -----------------------------------------------
+  I1   Error Detected          "error"  or  "err"
+  I2   Authentication Failure  "authentication failure"  /  "login failed"  /  "invalid user"
+  I3   Security Alert          "security"  or  "Security"
+  I4   SMT Unreachable         "cannot be reached"
+  I5   Connection Refused      "connection refused"  or  "connection reset"
+  I6   Threat Intel match      Set host/source_ip = an IOC value added in Threat Intel
+  I7   Anomaly (EPS spike)     Insert 100+ rows rapidly within the anomaly rule time window
+  I8   Incident auto-creation  Enable "Auto-Create Incident" on an anomaly rule, then trigger I7
+  I9   Log Forwarding active   Add forwarder → enable it → insert rows → check ForwardedCount
+                               increments on the forwarder list (or check receiver host/netcat)
+
+  --- 15d. End-to-end verification steps ---
+
+  Step  Action                                     Expected
+  ----  -----------------------------------------  -------------------------------------------
+  1     Insert rows using SQL or Python script      Rows appear in systemlogs table
+  2     Wait ~10 seconds (worker poll interval)     Worker log shows "Fetched N new systemlogs"
+  3     Live Feed page                              New events stream in
+  4     Alerts → Events tab                         Fired alert events appear (matched rules)
+  5     Threat Intel → lookup 1.2.3.4              "THREAT MATCH" banner  +  alert event created
+  6     Sources page                                Inserted hosts auto-discovered as Online
+  7     Dashboard KPIs                              EPS counter and event totals increment
+  8     Anomaly Detection → Events                  AnomalyEvent fires if EPS rule active
+  9     Incidents page                              Auto-incident created (if rule has Auto-Create on)
+  10    Log Forwarding → forwarder row              ForwardedCount increments as logs flow through
+  11    Log Search → search inserted host name      Events appear in historical search results
+  12    Reports → Compliance → Generate             Report data reflects newly ingested events
+
+
+================================================================================
+  END OF TEST GUIDE
+================================================================================

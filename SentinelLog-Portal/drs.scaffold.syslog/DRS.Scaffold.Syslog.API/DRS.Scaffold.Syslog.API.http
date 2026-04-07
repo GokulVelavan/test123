@@ -1,0 +1,6 @@
+@DRS.Scaffold.Syslog.API_HostAddress = http://localhost:5115
+
+GET {{DRS.Scaffold.Syslog.API_HostAddress}}/weatherforecast/
+Accept: application/json
+
+###

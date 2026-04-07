@@ -1,0 +1,288 @@
+@{
+    Layout = "_AppLayout";
+    ViewData["Title"] = "Settings &middot; Notifications";
+    ViewData["TopbarMeta"] = "Email alert delivery";
+}
+
+<!-- Add/Edit Channel Modal -->
+<div class="modal-overlay hidden" id="channelModal">
+    <div class="modal-box" style="max-width:440px">
+        <div class="modal-header">
+            <div class="modal-title" id="channelModalTitle">+ Add Email Channel</div>
+            <button class="modal-close" onclick="closeChannelModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <div id="channelModalError" class="alert-bar error" style="display:none"><span>&#x26A0;</span> <span id="channelModalErrorMsg"></span></div>
+            <div class="form-row">
+                <label class="form-label">Channel Name *</label>
+                <input class="form-input" id="chName" placeholder="e.g. SOC Alerts">
+            </div>
+            <div class="form-row">
+                <label class="form-label">Recipient Email(s) * <span style="color:var(--text-muted);font-weight:400">(comma-separated)</span></label>
+                <input class="form-input" id="chTarget" type="email" multiple placeholder="e.g. soc@company.com, admin@company.com">
+            </div>
+            <div class="form-row">
+                <label class="form-label" style="display:flex;align-items:center;gap:8px;cursor:pointer">
+                    <input type="checkbox" id="chEnabled" checked>
+                    <span>Enabled</span>
+                </label>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-ghost btn-sm" onclick="closeChannelModal()">Cancel</button>
+            <button class="btn btn-accent btn-sm" id="channelSubmitBtn" onclick="submitChannel()">Save</button>
+        </div>
+    </div>
+</div>
+
+@await Html.PartialAsync("_SettingsNav")
+<div style="padding:20px;display:flex;flex-direction:column;gap:20px">
+
+    <!-- SMTP Server Settings -->
+    <div class="panel">
+        <div class="panel-header">
+            <div class="panel-title">SMTP Server Settings</div>
+        </div>
+        <div style="padding:20px">
+            <div id="smtpAlert" class="alert-bar" style="display:none;margin-bottom:16px"><span id="smtpAlertMsg"></span></div>
+            <div style="display:grid;grid-template-columns:1fr 1fr;gap:16px">
+                <div class="form-row" style="margin:0">
+                    <label class="form-label">SMTP Host *</label>
+                    <input class="form-input" id="smtpHost" placeholder="smtp.gmail.com">
+                </div>
+                <div class="form-row" style="margin:0">
+                    <label class="form-label">Port</label>
+                    <input class="form-input" id="smtpPort" type="number" value="587" min="1" max="65535">
+                </div>
+                <div class="form-row" style="margin:0">
+                    <label class="form-label">Username</label>
+                    <input class="form-input" id="smtpUser" placeholder="user@domain.com">
+                </div>
+                <div class="form-row" style="margin:0">
+                    <label class="form-label">Password <span style="color:var(--text-muted);font-weight:400">(leave blank to keep existing)</span></label>
+                    <input class="form-input" id="smtpPass" type="password" placeholder="••••••••">
+                </div>
+                <div class="form-row" style="margin:0">
+                    <label class="form-label">From Address *</label>
+                    <input class="form-input" id="smtpFrom" placeholder="sentinellog@company.com">
+                </div>
+                <div class="form-row" style="margin:0;display:flex;align-items:flex-end">
+                    <label class="form-label" style="display:flex;align-items:center;gap:8px;cursor:pointer;margin-bottom:0">
+                        <input type="checkbox" id="smtpTls" checked>
+                        <span>Use TLS / STARTTLS</span>
+                    </label>
+                </div>
+            </div>
+            <div style="margin-top:16px;display:flex;align-items:center;gap:12px;flex-wrap:wrap">
+                <button class="btn btn-accent btn-sm" id="smtpSaveBtn" onclick="saveSmtp()">Save Settings</button>
+                <div style="display:flex;align-items:center;gap:8px">
+                    <input class="form-input" id="testEmailTo" placeholder="test@example.com" style="width:220px">
+                    <button class="btn btn-ghost btn-sm" id="smtpTestBtn" onclick="sendTestEmail()">Send Test Email</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Email Notification Channels -->
+    <div class="panel">
+        <div class="panel-header">
+            <div class="panel-title">Email Notification Channels</div>
+            <div class="panel-controls">
+                <button class="btn btn-accent btn-sm" onclick="openAddChannelModal()">+ Add Channel</button>
+            </div>
+        </div>
+        <div id="channelsTable">
+            <div style="padding:1.5rem;color:var(--text-muted)">Loading&hellip;</div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+var editChannelId = null;
+var _channels = [];
+
+// ── SMTP Settings ─────────────────────────────────────────────────────────────
+
+async function loadSmtp() {
+    try {
+        const r = await fetch('/api/settings/notification-settings');
+        if (!r.ok) return;
+        const d = await r.json();
+        document.getElementById('smtpHost').value  = d.smtpHost  || '';
+        document.getElementById('smtpPort').value  = d.smtpPort  || 587;
+        document.getElementById('smtpTls').checked = d.smtpTls !== false;
+        document.getElementById('smtpUser').value  = d.smtpUser  || '';
+        document.getElementById('smtpFrom').value  = d.fromAddress || '';
+        // password intentionally not pre-filled
+    } catch {}
+}
+
+async function saveSmtp() {
+    const btn = document.getElementById('smtpSaveBtn');
+    btn.disabled = true; btn.textContent = 'Saving…';
+    try {
+        const payload = {
+            smtpHost:    document.getElementById('smtpHost').value.trim(),
+            smtpPort:    parseInt(document.getElementById('smtpPort').value) || 587,
+            smtpTls:     document.getElementById('smtpTls').checked,
+            smtpUser:    document.getElementById('smtpUser').value.trim(),
+            smtpPass:    document.getElementById('smtpPass').value,
+            fromAddress: document.getElementById('smtpFrom').value.trim()
+        };
+        const r = await fetch('/api/settings/notification-settings', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        if (!r.ok) { showSmtpAlert('error', 'Failed to save SMTP settings.'); return; }
+        document.getElementById('smtpPass').value = '';
+        showSmtpAlert('success', 'SMTP settings saved.');
+    } catch { showSmtpAlert('error', 'Network error.'); }
+    finally { btn.disabled = false; btn.textContent = 'Save Settings'; }
+}
+
+async function sendTestEmail() {
+    const to  = document.getElementById('testEmailTo').value.trim();
+    if (!to) { showSmtpAlert('error', 'Enter a recipient email address first.'); return; }
+    const btn = document.getElementById('smtpTestBtn');
+    btn.disabled = true; btn.textContent = 'Sending…';
+    try {
+        const r = await fetch('/api/settings/smtp/test', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ to })
+        });
+        const d = await r.json();
+        if (r.ok) { showSmtpAlert('success', d.message || 'Test email sent.'); }
+        else      { showSmtpAlert('error', d.message || 'Failed to send test email.'); }
+    } catch { showSmtpAlert('error', 'Network error.'); }
+    finally { btn.disabled = false; btn.textContent = 'Send Test Email'; }
+}
+
+function showSmtpAlert(type, msg) {
+    const el = document.getElementById('smtpAlert');
+    el.className = 'alert-bar ' + (type === 'success' ? 'success' : 'error');
+    document.getElementById('smtpAlertMsg').textContent = msg;
+    el.style.display = 'flex';
+    if (type === 'success') setTimeout(() => { el.style.display = 'none'; }, 4000);
+}
+
+// ── Email Channels ────────────────────────────────────────────────────────────
+
+async function loadChannels() {
+    try {
+        const r = await fetch('/api/notification-channels');
+        if (!r.ok) { document.getElementById('channelsTable').innerHTML = '<div style="padding:1.5rem;color:var(--sev-error)">Failed to load channels.</div>'; return; }
+        const items = await r.json();
+        _channels = items;
+        if (!items.length) {
+            document.getElementById('channelsTable').innerHTML = '<div style="padding:1.5rem;color:var(--text-muted)">No email channels configured.</div>';
+            return;
+        }
+        const rows = items.map(c => `
+            <tr>
+                <td>${esc(c.name)}</td>
+                <td class="mono" style="color:var(--text-muted);font-size:12px">${esc(c.target ?? '—')}</td>
+                <td>
+                    <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+                        <input type="checkbox" ${c.enabled ? 'checked' : ''} onchange="toggleChannel(${c.id}, this.checked)">
+                        <span style="font-size:12px;color:var(--text-muted)">${c.enabled ? 'Enabled' : 'Disabled'}</span>
+                    </label>
+                </td>
+                <td style="text-align:right">
+                    <button class="btn btn-ghost btn-sm" data-cid="${c.id}" onclick="openEditChannelByIdFromCache(this.dataset.cid)">Edit</button>
+                    <button class="btn btn-sm" style="color:var(--sev-error);background:transparent;border:1px solid var(--sev-error)" onclick="deleteChannel(${c.id}, ${JSON.stringify(c.name)})">Delete</button>
+                </td>
+            </tr>`).join('');
+        document.getElementById('channelsTable').innerHTML = `
+            <table class="data-table">
+                <thead><tr><th>Name</th><th>Recipient Email(s)</th><th>Enabled</th><th></th></tr></thead>
+                <tbody>${rows}</tbody>
+            </table>`;
+    } catch { document.getElementById('channelsTable').innerHTML = '<div style="padding:1.5rem;color:var(--sev-error)">Network error.</div>'; }
+}
+
+function esc(s) { var d = document.createElement('div'); d.textContent = String(s ?? ''); return d.innerHTML; }
+
+function openAddChannelModal() {
+    editChannelId = null;
+    document.getElementById('channelModalTitle').textContent = '+ Add Email Channel';
+    document.getElementById('channelModalError').style.display = 'none';
+    document.getElementById('chName').value = '';
+    document.getElementById('chTarget').value = '';
+    document.getElementById('chEnabled').checked = true;
+    document.getElementById('channelModal').classList.remove('hidden');
+    document.getElementById('chName').focus();
+}
+
+function openEditChannelByIdFromCache(id) {
+    var c = _channels.find(x => x.id == id);
+    if (c) openEditChannelModal(c);
+}
+
+function openEditChannelModal(c) {
+    editChannelId = c.id;
+    document.getElementById('channelModalTitle').textContent = 'Edit Email Channel';
+    document.getElementById('channelModalError').style.display = 'none';
+    document.getElementById('chName').value   = c.name   || '';
+    document.getElementById('chTarget').value = c.target || '';
+    document.getElementById('chEnabled').checked = !!c.enabled;
+    document.getElementById('channelModal').classList.remove('hidden');
+}
+
+function closeChannelModal() {
+    document.getElementById('channelModal').classList.add('hidden');
+    editChannelId = null;
+}
+
+async function submitChannel() {
+    const name    = document.getElementById('chName').value.trim();
+    const target  = document.getElementById('chTarget').value.trim();
+    const enabled = document.getElementById('chEnabled').checked;
+    if (!name)   { showChError('Channel name is required.'); return; }
+    if (!target) { showChError('Recipient email is required.'); return; }
+    const btn = document.getElementById('channelSubmitBtn');
+    btn.disabled = true; btn.textContent = 'Saving…';
+    try {
+        const payload = { name, type: 'Email', target, enabled };
+        const isEdit  = editChannelId !== null;
+        const r = await fetch(isEdit ? '/api/notification-channels/' + editChannelId : '/api/notification-channels', {
+            method:  isEdit ? 'PUT' : 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body:    JSON.stringify(payload)
+        });
+        if (!r.ok) { const t = await r.text(); showChError(t || 'Failed to save channel.'); return; }
+        closeChannelModal();
+        loadChannels();
+    } catch { showChError('Network error.'); }
+    finally { btn.disabled = false; btn.textContent = 'Save'; }
+}
+
+function showChError(msg) {
+    document.getElementById('channelModalErrorMsg').textContent = msg;
+    document.getElementById('channelModalError').style.display = 'flex';
+}
+
+async function toggleChannel(id, enabled) {
+    try {
+        await fetch('/api/notification-channels/' + id + '/toggle?enabled=' + enabled, { method: 'PATCH' });
+        loadChannels();
+    } catch {}
+}
+
+async function deleteChannel(id, name) {
+    if (!confirm('Delete channel "' + name + '"?')) return;
+    try {
+        const r = await fetch('/api/notification-channels/' + id, { method: 'DELETE' });
+        if (!r.ok) { alert('Failed to delete channel.'); return; }
+        loadChannels();
+    } catch { alert('Network error.'); }
+}
+
+document.getElementById('channelModal').addEventListener('click', function(e) { if (e.target === this) closeChannelModal(); });
+
+loadSmtp();
+loadChannels();
+</script>
+}

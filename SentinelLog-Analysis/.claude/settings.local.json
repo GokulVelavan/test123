@@ -1,0 +1,23 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(wc -l \"C:/Users/Hp/AppData/Local/Temp/claude/D--syslog-analysis/6e985f9c-619a-48de-ba62-9c06ecf15961/tasks/\"*.output)",
+      "Bash(find D:/syslog-UI/drs.scaffold.syslog -type f \\\\\\(-name *.cs -o -name *.cshtml -o -name *.razor -o -name *.csproj -o -name *.json -o -name *.sln -o -name *.md \\\\\\))",
+      "Bash(find D:/syslog-UI/drs.scaffold.syslog -name *.tsx -o -name *.jsx -o -name *.vue -o -name *.html -o -name *.razor)",
+      "Bash(find D:/syslog-UI -name *.ts -o -name *.tsx -o -name *.jsx -o -name *.vue -o -name *.svelte -o -name *.html)",
+      "Bash(find D:/syslog-UI/drs.scaffold.syslog/DRS.Scaffold.Syslog.WebUI -type f -name *.cs -o -name *.cshtml -o -name *.razor -o -name *.csproj -o -name *.json -o -name *.ts -o -name *.tsx -o -name *.html)",
+      "Bash(find D:/syslog-UI/drs.scaffold.syslog/DRS.Scaffold.Syslog.Worker -type f -name *.cs -o -name *.csproj -o -name *.json)",
+      "Bash(python3 -c \"import reportlab; print\\(reportlab.Version\\)\")",
+      "Bash(python -c \"import reportlab; print\\(reportlab.Version\\)\")",
+      "Bash(pip install:*)",
+      "Bash(python -m pip install reportlab)",
+      "Read(//d/Apps/Python/**)",
+      "Bash(D:/Apps/Python/python.exe --version)",
+      "Read(//c/Users/Hp/AppData/Local/Programs/**)",
+      "Bash(ls /c/Python3*/)",
+      "Read(//c/Users/Hp/AppData/Local/**)",
+      "Bash(ls \"D:/Apps/Python/Scripts/pip\"*.exe)",
+      "Bash(npm --version)"
+    ]
+  }
+}

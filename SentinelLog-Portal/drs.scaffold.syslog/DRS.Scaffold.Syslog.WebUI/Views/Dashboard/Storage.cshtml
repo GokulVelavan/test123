@@ -1,0 +1,259 @@
+@model StorageViewModel
+@{
+    Layout = "_AppLayout";
+    ViewData["Title"] = "Storage";
+    ViewData["TopbarMeta"] = "Tier usage, retention policies and compression stats";
+
+    double primaryPct = Model.PrimaryStorageTotalTb > 0
+        ? Math.Round(Model.PrimaryStorageUsedTb / Model.PrimaryStorageTotalTb * 100, 1) : 0;
+    double archivePct = Model.ArchiveStorageTotalTb > 0
+        ? Math.Round(Model.ArchiveStorageUsedTb / Model.ArchiveStorageTotalTb * 100, 1) : 0;
+
+    // Adaptive unit helpers
+    string FmtStorage(double tb) => tb >= 1
+        ? $"{tb:F2} TB"
+        : tb >= 0.001
+            ? $"{tb * 1024:F1} GB"
+            : $"{tb * 1024 * 1024:F0} MB";
+}
+
+<!-- Add / Edit Policy Modal -->
+<div class="modal-overlay hidden" id="policyModal">
+    <div class="modal-box">
+        <div class="modal-header">
+            <div class="modal-title" id="policyModalTitle">Add Retention Policy</div>
+            <button class="modal-close" onclick="closePolicyModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <div id="policyModalError" class="alert-bar error" style="display:none"><span>&#x26A0;</span> <span id="policyModalErrorMsg"></span></div>
+            <div class="form-row">
+                <label class="form-label">Source Type *</label>
+                <select class="form-select" id="policySourceType">
+                    <option value="">— Select —</option>
+                    <option value="Firewall">Firewall</option>
+                    <option value="Router">Router</option>
+                    <option value="Switch">Switch</option>
+                    <option value="Linux">Linux</option>
+                    <option value="Windows">Windows</option>
+                    <option value="IDS/IPS">IDS/IPS</option>
+                    <option value="Other">Other</option>
+                    <option value="Default">Default (all sources)</option>
+                </select>
+            </div>
+            <div class="form-row">
+                <label class="form-label">Retention Days <span style="color:var(--text-muted)">(blank = forever)</span></label>
+                <input class="form-input" id="policyRetentionDays" type="number" min="1" placeholder="e.g. 90">
+            </div>
+            <div class="toggle-wrap" style="padding-top:4px">
+                <label class="toggle-switch">
+                    <input type="checkbox" id="policyCompression">
+                    <span class="toggle-slider"></span>
+                </label>
+                <span class="form-label" style="text-transform:none;letter-spacing:0">Enable LZ4 compression</span>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-ghost btn-sm" onclick="closePolicyModal()">Cancel</button>
+            <button class="btn btn-accent btn-sm" id="policySubmitBtn" onclick="submitPolicy()">Save Policy</button>
+        </div>
+    </div>
+</div>
+
+<div style="padding:20px;display:flex;flex-direction:column;gap:16px">
+
+    <div class="metrics-row" style="grid-template-columns:repeat(4,1fr)">
+        <div class="metric-card cyan">
+            <div class="metric-label">Primary Used</div>
+            <div class="metric-value">@FmtStorage(Model.PrimaryStorageUsedTb)</div>
+            <div style="height:3px;background:var(--bg-elevated);border-radius:2px;overflow:hidden;margin:6px 0 4px">
+                <div style="height:100%;width:@primaryPct%;background:var(--accent-cyan);border-radius:2px"></div>
+            </div>
+            <div class="metric-sub">of @Model.PrimaryStorageTotalTb.ToString("F1") TB (@primaryPct%)</div>
+        </div>
+        <div class="metric-card blue">
+            <div class="metric-label">Archive Used</div>
+            <div class="metric-value">@FmtStorage(Model.ArchiveStorageUsedTb)</div>
+            <div style="height:3px;background:var(--bg-elevated);border-radius:2px;overflow:hidden;margin:6px 0 4px">
+                <div style="height:100%;width:@archivePct%;background:var(--sev-info);border-radius:2px"></div>
+            </div>
+            <div class="metric-sub">of @Model.ArchiveStorageTotalTb.ToString("F1") TB (@archivePct%)</div>
+        </div>
+        <div class="metric-card green">
+            <div class="metric-label">Ingestion Rate</div>
+            <div class="metric-value">@Model.IngestionRateGbPerHour.ToString("F2") <span style="font-size:14px;color:var(--text-muted)">GB/h</span>
+            </div>
+        </div>
+        <div class="metric-card orange">
+            <div class="metric-label">Compression Ratio</div>
+            <div class="metric-value">@Model.CompressionRatio.ToString("F1")<span style="font-size:14px;color:var(--text-muted)">:1</span>
+            </div>
+        </div>
+    </div>
+
+    <!-- Storage History Chart (#66/#67) -->
+    <div class="panel">
+        <div class="panel-header">
+            <div class="panel-title">Storage Growth &mdash; 30 Days</div>
+        </div>
+        <div class="chart-area">
+            <canvas id="storageHistoryChart"></canvas>
+        </div>
+    </div>
+
+    <div class="panel">
+        <div class="panel-header">
+            <div class="panel-title">Retention Policies</div>
+            <div class="panel-controls">
+                <button class="btn btn-accent btn-sm" onclick="openPolicyModal()">+ Add Policy</button>
+            </div>
+        </div>
+        @if (Model.Policies.Any())
+        {
+            <table class="policy-table">
+                <thead>
+                    <tr>
+                        <th>Source Type</th>
+                        <th>Retention (days)</th>
+                        <th>Compression</th>
+                        <th>Created</th>
+                        <th style="text-align:right">Actions</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var p in Model.Policies)
+                    {
+                        <tr>
+                            <td>@(p.SourceType ?? "Default")</td>
+                            <td>@(p.RetentionDays?.ToString() ?? "&#8734;")</td>
+                            <td>
+                                @if (p.Compression)
+                                {
+                                    <span class="compress-badge">&#10003; LZ4</span>
+                                }
+                                else
+                                {
+                                    <span style="color:var(--text-muted)">&mdash;</span>
+                                }
+                            </td>
+                            <td class="mono" style="color:var(--text-muted)">@p.CreatedAt</td>
+                            <td style="text-align:right">
+                                <button class="btn btn-sm"
+                                        style="color:var(--sev-error);background:transparent;border:1px solid var(--sev-error)"
+                                        onclick="deletePolicy(@p.Id, '@(p.SourceType ?? "Default")')">Delete</button>
+                            </td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        }
+        else
+        {
+            <div style="padding:1.5rem;color:var(--text-muted)">No retention policies configured.</div>
+        }
+    </div>
+
+</div>
+
+@section Scripts {
+<script src="/lib/chart.umd.min.js"></script>
+<script>
+/* ── Storage History Chart ────────────────────────────── */
+(async function () {
+    try {
+        const r = await fetch('/api/settings/storage/history?days=30');
+        if (!r.ok) return;
+        const data = await r.json();
+        const ctx = document.getElementById('storageHistoryChart').getContext('2d');
+        new Chart(ctx, {
+            type: 'line',
+            data: {
+                labels: data.map(d => d.date),
+                datasets: [
+                    {
+                        label: 'Event Count',
+                        data: data.map(d => d.eventCount),
+                        borderColor: '#00d4ff',
+                        backgroundColor: 'rgba(0,212,255,0.10)',
+                        yAxisID: 'yEvents',
+                        fill: true, tension: 0.3, pointRadius: 2
+                    },
+                    {
+                        label: 'Estimated MB',
+                        data: data.map(d => d.estimatedMb),
+                        borderColor: '#7b8cff',
+                        backgroundColor: 'rgba(123,140,255,0.07)',
+                        yAxisID: 'yMb',
+                        fill: true, tension: 0.3, pointRadius: 2
+                    }
+                ]
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                interaction: { mode: 'index', intersect: false },
+                plugins: { legend: { labels: { color: '#7a90b8', boxWidth: 12 } } },
+                scales: {
+                    x:       { ticks: { color: '#3d5280', maxTicksLimit: 10 }, grid: { color: '#1e2d45' } },
+                    yEvents: { position: 'left',  ticks: { color: '#3d5280' }, grid: { color: '#1e2d45' }, beginAtZero: true, title: { display: true, text: 'Events', color: '#3d5280' } },
+                    yMb:     { position: 'right', ticks: { color: '#3d5280' }, grid: { drawOnChartArea: false }, beginAtZero: true, title: { display: true, text: 'MB', color: '#3d5280' } }
+                }
+            }
+        });
+    } catch (_) {}
+})();
+
+function openPolicyModal() {
+    document.getElementById('policyModalTitle').textContent = 'Add Retention Policy';
+    document.getElementById('policySourceType').value  = '';
+    document.getElementById('policyRetentionDays').value = '';
+    document.getElementById('policyCompression').checked = false;
+    document.getElementById('policyModalError').style.display = 'none';
+    document.getElementById('policyModal').classList.remove('hidden');
+    document.getElementById('policySourceType').focus();
+}
+
+function closePolicyModal() {
+    document.getElementById('policyModal').classList.add('hidden');
+}
+
+async function submitPolicy() {
+    const sourceType    = document.getElementById('policySourceType').value;
+    const retentionDays = document.getElementById('policyRetentionDays').value;
+    const compression   = document.getElementById('policyCompression').checked;
+    if (!sourceType) { showPolicyError('Source Type is required.'); return; }
+    const btn = document.getElementById('policySubmitBtn');
+    btn.disabled = true; btn.textContent = 'Saving…';
+    try {
+        const payload = {
+            sourceType,
+            retentionDays: retentionDays ? parseInt(retentionDays) : null,
+            compression
+        };
+        const r = await fetch('/api/settings/storage/policies', {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        if (!r.ok) { const t = await r.text(); showPolicyError(t || 'Failed to save policy.'); return; }
+        closePolicyModal();
+        window.location.reload();
+    } catch { showPolicyError('Network error.'); }
+    finally { btn.disabled = false; btn.textContent = 'Save Policy'; }
+}
+
+function showPolicyError(msg) {
+    document.getElementById('policyModalErrorMsg').textContent = msg;
+    document.getElementById('policyModalError').style.display = 'flex';
+}
+
+document.getElementById('policyModal').addEventListener('click', function(e) { if (e.target === this) closePolicyModal(); });
+
+async function deletePolicy(id, sourceType) {
+    if (!confirm('Delete retention policy for "' + sourceType + '"?')) return;
+    try {
+        const r = await fetch('/api/settings/storage/policies/' + id, { method: 'DELETE' });
+        if (!r.ok) { alert('Failed to delete policy.'); return; }
+        window.location.reload();
+    } catch { alert('Network error.'); }
+}
+</script>
+}

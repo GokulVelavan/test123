@@ -1,0 +1,206 @@
+@{
+    Layout = "_AppLayout";
+    ViewData["Title"] = "Sources — Parsers";
+    ViewData["TopbarMeta"] = "Log parsing and normalization rules";
+}
+@await Html.PartialAsync("_SourcesNav")
+<div style="padding:20px;display:flex;flex-direction:column;gap:16px">
+
+    <!-- Stats row -->
+    <div class="metrics-row" style="grid-template-columns:repeat(4,1fr)">
+        <div class="metric-card cyan">
+            <div class="metric-label">Total Parsers</div>
+            <div class="metric-value" id="statTotal">—</div>
+            <div class="metric-sub">registered</div>
+        </div>
+        <div class="metric-card green">
+            <div class="metric-label">Enabled</div>
+            <div class="metric-value" id="statEnabled">—</div>
+            <div class="metric-sub">active</div>
+        </div>
+        <div class="metric-card blue">
+            <div class="metric-label">Built-in</div>
+            <div class="metric-value" id="statBuiltin">—</div>
+            <div class="metric-sub">vendor parsers</div>
+        </div>
+        <div class="metric-card yellow">
+            <div class="metric-label">Custom</div>
+            <div class="metric-value" id="statCustom">—</div>
+            <div class="metric-sub">user-defined</div>
+        </div>
+    </div>
+
+    <!-- Filter bar -->
+    <div class="panel">
+        <div class="panel-header">
+            <div class="panel-title">Parser Library</div>
+            <div class="panel-controls" style="gap:8px">
+                <select class="form-input" id="filterCategory" onchange="applyFilter()" style="width:160px;padding:4px 8px;font-size:13px">
+                    <option value="">All Categories</option>
+                    <option value="syslog">Syslog</option>
+                    <option value="network">Network</option>
+                    <option value="security">Security</option>
+                    <option value="windows">Windows</option>
+                    <option value="linux">Linux / Unix</option>
+                    <option value="snmp">SNMP</option>
+                    <option value="custom">Custom</option>
+                </select>
+                <select class="form-input" id="filterStatus" onchange="applyFilter()" style="width:130px;padding:4px 8px;font-size:13px">
+                    <option value="">All Statuses</option>
+                    <option value="enabled">Enabled</option>
+                    <option value="disabled">Disabled</option>
+                </select>
+                <input class="form-input" id="filterSearch" placeholder="Search parsers…" oninput="applyFilter()" style="width:200px;padding:4px 8px;font-size:13px">
+            </div>
+        </div>
+        <div id="parsersGrid" style="padding:1rem;display:grid;grid-template-columns:repeat(auto-fill,minmax(300px,1fr));gap:14px">
+            <div style="color:var(--text-muted);font-size:13px">Loading…</div>
+        </div>
+    </div>
+
+</div>
+
+@section Scripts {
+<script>
+var allParsers = [];
+var enabledSet = new Set();
+
+/* ── Built-in parser definitions ─────────────────────────── */
+const BUILTIN_PARSERS = [
+    { id:'syslog-rfc3164',  name:'Syslog RFC 3164',        category:'syslog',    vendor:'IETF',       desc:'BSD syslog format — PRI, header, message',              format:'BSD Syslog',  rfc:'RFC 3164' },
+    { id:'syslog-rfc5424',  name:'Syslog RFC 5424',        category:'syslog',    vendor:'IETF',       desc:'Structured syslog with MSGID, SD-ELEMENT support',       format:'Structured',  rfc:'RFC 5424' },
+    { id:'syslog-cef',      name:'CEF (ArcSight)',          category:'security',  vendor:'ArcSight',   desc:'Common Event Format — key-value extension fields',       format:'CEF',         rfc:'ArcSight' },
+    { id:'syslog-leef',     name:'LEEF (QRadar)',           category:'security',  vendor:'IBM',        desc:'Log Event Extended Format for IBM QRadar',              format:'LEEF',        rfc:'IBM' },
+    { id:'cisco-ios',       name:'Cisco IOS',               category:'network',   vendor:'Cisco',      desc:'Cisco IOS/IOS-XE/IOS-XR system messages',               format:'Syslog',      rfc:'Cisco' },
+    { id:'cisco-asa',       name:'Cisco ASA/FTD',           category:'security',  vendor:'Cisco',      desc:'Cisco ASA firewall and FTD threat defense logs',         format:'Syslog',      rfc:'Cisco' },
+    { id:'cisco-meraki',    name:'Cisco Meraki',            category:'network',   vendor:'Cisco',      desc:'Meraki MX/MR/MS event and flow logs',                   format:'JSON/Syslog', rfc:'Cisco' },
+    { id:'paloalto-panos',  name:'Palo Alto PAN-OS',        category:'security',  vendor:'Palo Alto',  desc:'PAN-OS traffic, threat, URL, and system logs',           format:'CSV/Syslog',  rfc:'PAN-OS' },
+    { id:'fortinet-fgt',    name:'FortiGate',               category:'security',  vendor:'Fortinet',   desc:'FortiOS event, traffic, and UTM logs',                  format:'Key=Value',   rfc:'Fortinet' },
+    { id:'juniper-junos',   name:'Juniper JunOS',           category:'network',   vendor:'Juniper',    desc:'JunOS system, security, and routing event logs',         format:'Syslog',      rfc:'Juniper' },
+    { id:'checkpoint-fw',   name:'Check Point Firewall',    category:'security',  vendor:'Check Point',desc:'Check Point OPSEC LEA and SmartLog format',             format:'LEA/Syslog',  rfc:'OPSEC' },
+    { id:'f5-bigip',        name:'F5 BIG-IP',               category:'network',   vendor:'F5',         desc:'BIG-IP LTM, ASM, APM access and system logs',           format:'Syslog',      rfc:'F5' },
+    { id:'windows-evtx',    name:'Windows Event Log',       category:'windows',   vendor:'Microsoft',  desc:'Windows XML Event Log (EVTX) via NXLog agent',          format:'XML/EVTX',    rfc:'Microsoft' },
+    { id:'windows-iis',     name:'Windows IIS',             category:'windows',   vendor:'Microsoft',  desc:'IIS W3C Extended log format for web access logs',        format:'W3C',         rfc:'W3C' },
+    { id:'windows-dns',     name:'Windows DNS Server',      category:'windows',   vendor:'Microsoft',  desc:'Windows DNS Server analytical and debug logs',           format:'Text/ETW',    rfc:'Microsoft' },
+    { id:'linux-syslog',    name:'Linux Syslog',            category:'linux',     vendor:'Linux',      desc:'Linux syslog via rsyslog, syslog-ng, or journald',       format:'Syslog',      rfc:'RFC 3164' },
+    { id:'linux-audit',     name:'Linux Audit (auditd)',    category:'linux',     vendor:'Linux',      desc:'Linux kernel audit subsystem — syscall and file events',  format:'Audit',       rfc:'Linux' },
+    { id:'linux-apache',    name:'Apache / HTTPD',          category:'linux',     vendor:'Apache',     desc:'Apache Combined/Common Log Format access and error logs', format:'CLF/Combined', rfc:'W3C' },
+    { id:'linux-nginx',     name:'NGINX',                   category:'linux',     vendor:'NGINX',      desc:'NGINX access and error log format',                     format:'Combined',    rfc:'W3C' },
+    { id:'snmp-v1',         name:'SNMP Trap v1',            category:'snmp',      vendor:'IETF',       desc:'SNMPv1 trap PDU — enterprise, generic, specific OID',   format:'ASN.1 BER',   rfc:'RFC 1157' },
+    { id:'snmp-v2c',        name:'SNMP Trap v2c',           category:'snmp',      vendor:'IETF',       desc:'SNMPv2c trap with varbind list',                        format:'ASN.1 BER',   rfc:'RFC 1901' },
+    { id:'snmp-v3',         name:'SNMP Trap v3',            category:'snmp',      vendor:'IETF',       desc:'SNMPv3 with USM authentication and privacy',             format:'ASN.1 BER',   rfc:'RFC 3411' },
+    { id:'netflow-v9',      name:'NetFlow v9 / IPFIX',      category:'network',   vendor:'Cisco/IETF', desc:'Flow telemetry in NetFlow v9 or IPFIX format',           format:'Binary',      rfc:'RFC 3954' },
+    { id:'solarwinds',      name:'SolarWinds NPM',          category:'network',   vendor:'SolarWinds', desc:'SolarWinds Network Performance Monitor alerts',          format:'Syslog',      rfc:'SolarWinds' },
+];
+
+const CATEGORY_COLORS = {
+    syslog:   '#00d4ff',
+    network:  '#7b8cff',
+    security: '#ff3b5c',
+    windows:  '#00b4d8',
+    linux:    '#2ecc71',
+    snmp:     '#ffcd47',
+    custom:   '#b57bee',
+};
+
+function esc(s) { var d = document.createElement('div'); d.textContent = String(s ?? ''); return d.innerHTML; }
+
+/* ── Load enabled state from platformconfig ───────────────── */
+async function loadParsers() {
+    try {
+        const r = await fetch('/api/settings/platformconfig?category=parsers');
+        const cfg = r.ok ? (await r.json() ?? []) : [];
+        // No record = enabled by default; only explicit value:'false' disables
+        const disabledSet = new Set(cfg.filter(x => x.value === 'false').map(x => x.key));
+        enabledSet = new Set(BUILTIN_PARSERS.map(p => p.id).filter(id => !disabledSet.has(id)));
+    } catch {
+        enabledSet = new Set(BUILTIN_PARSERS.map(p => p.id));
+    }
+
+    allParsers = BUILTIN_PARSERS.map(p => ({
+        ...p,
+        enabled: enabledSet.has(p.id),
+        builtin: true,
+    }));
+
+    updateStats();
+    renderParsers(allParsers);
+}
+
+function updateStats() {
+    const enabled = allParsers.filter(p => p.enabled).length;
+    const builtin = allParsers.filter(p => p.builtin).length;
+    const custom  = allParsers.filter(p => !p.builtin).length;
+    document.getElementById('statTotal').textContent   = allParsers.length;
+    document.getElementById('statEnabled').textContent = enabled;
+    document.getElementById('statBuiltin').textContent = builtin;
+    document.getElementById('statCustom').textContent  = custom;
+}
+
+function applyFilter() {
+    const cat    = document.getElementById('filterCategory').value;
+    const status = document.getElementById('filterStatus').value;
+    const q      = document.getElementById('filterSearch').value.toLowerCase();
+    let filtered = allParsers;
+    if (cat)    filtered = filtered.filter(p => p.category === cat);
+    if (status) filtered = filtered.filter(p => status === 'enabled' ? p.enabled : !p.enabled);
+    if (q)      filtered = filtered.filter(p => (p.name + p.vendor + p.desc + p.category).toLowerCase().includes(q));
+    renderParsers(filtered);
+}
+
+function renderParsers(list) {
+    if (!list.length) {
+        document.getElementById('parsersGrid').innerHTML = '<div style="color:var(--text-muted);font-size:13px">No parsers match the current filters.</div>';
+        return;
+    }
+    document.getElementById('parsersGrid').innerHTML = list.map(p => {
+        const color  = CATEGORY_COLORS[p.category] || '#7b8fa6';
+        const onCls  = p.enabled ? 'sev-badge notice' : 'sev-badge';
+        const onTxt  = p.enabled ? 'Enabled' : 'Disabled';
+        const btnTxt = p.enabled ? 'Disable' : 'Enable';
+        const btnStyle = p.enabled
+            ? 'background:transparent;border:1px solid var(--sev-error);color:var(--sev-error)'
+            : 'background:transparent;border:1px solid var(--sev-notice);color:var(--sev-notice)';
+        return `<div style="background:var(--bg-elevated);border:1px solid var(--border);border-radius:10px;overflow:hidden;border-left:3px solid ${color};display:flex;flex-direction:column">
+            <div style="padding:14px 16px;flex:1">
+                <div style="display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:8px">
+                    <div>
+                        <div style="font-size:14px;font-weight:600;color:var(--text-primary)">${esc(p.name)}</div>
+                        <div style="font-size:11px;color:${color};margin-top:1px;text-transform:uppercase;letter-spacing:.5px">${esc(p.category)} · ${esc(p.vendor)}</div>
+                    </div>
+                    <span class="${onCls}" style="font-size:10px;white-space:nowrap">${onTxt}</span>
+                </div>
+                <div style="font-size:12px;color:var(--text-muted);line-height:1.5;margin-bottom:10px">${esc(p.desc)}</div>
+                <div style="display:flex;gap:8px;flex-wrap:wrap">
+                    <span style="font-size:10px;background:var(--bg-1);border:1px solid var(--border);border-radius:4px;padding:2px 6px;color:var(--text-muted);font-family:var(--font-mono)">${esc(p.format)}</span>
+                    <span style="font-size:10px;background:var(--bg-1);border:1px solid var(--border);border-radius:4px;padding:2px 6px;color:var(--text-muted);font-family:var(--font-mono)">${esc(p.rfc)}</span>
+                    ${p.builtin ? '<span style="font-size:10px;background:var(--bg-1);border:1px solid var(--border);border-radius:4px;padding:2px 6px;color:var(--text-muted)">Built-in</span>' : '<span style="font-size:10px;background:var(--bg-1);border:1px solid var(--border);border-radius:4px;padding:2px 6px;color:var(--accent-cyan)">Custom</span>'}
+                </div>
+            </div>
+            <div style="padding:10px 16px;border-top:1px solid var(--border);display:flex;justify-content:flex-end">
+                <button class="btn btn-sm" style="${btnStyle};font-size:11px" onclick="toggleParser('${esc(p.id)}', ${p.enabled})">${btnTxt}</button>
+            </div>
+        </div>`;
+    }).join('');
+}
+
+async function toggleParser(parserId, currentlyEnabled) {
+    const newVal = !currentlyEnabled;
+    try {
+        const r = await fetch('/api/settings/platformconfig', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ category: 'parsers', key: parserId, value: String(newVal) })
+        });
+        if (!r.ok) { alert('Failed to update parser state.'); return; }
+        // Update local state
+        const idx = allParsers.findIndex(p => p.id === parserId);
+        if (idx !== -1) allParsers[idx].enabled = newVal;
+        updateStats();
+        applyFilter();
+    } catch { alert('Network error.'); }
+}
+
+loadParsers();
+</script>
+}

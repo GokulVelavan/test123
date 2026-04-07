@@ -1,0 +1,260 @@
+@{
+    Layout = "_AppLayout";
+    ViewData["Title"] = "Live Feed";
+    ViewData["TopbarMeta"] = "Real-time event stream";
+}
+
+<div style="display:flex;flex-direction:column;height:calc(100vh - var(--header-h))">
+
+    <div class="log-toolbar">
+        <div class="sev-filter">
+            <button class="sev-btn all-btn active"  onclick="setFilter(null, this)">ALL</button>
+            <button class="sev-btn crit-btn" onclick="setFilter(0, this)">EMRG</button>
+            <button class="sev-btn crit-btn" onclick="setFilter(1, this)">ALRT</button>
+            <button class="sev-btn crit-btn" onclick="setFilter(2, this)">CRIT</button>
+            <button class="sev-btn err-btn"  onclick="setFilter(3, this)">ERR</button>
+            <button class="sev-btn warn-btn" onclick="setFilter(4, this)">WARN</button>
+            <button class="sev-btn notice-btn" onclick="setFilter(5, this)">NOTICE</button>
+            <button class="sev-btn info-btn" onclick="setFilter(6, this)">INFO</button>
+            <button class="sev-btn debug-btn" onclick="setFilter(7, this)">DEBUG</button>
+        </div>
+        <input class="log-search-input" id="liveSearch" type="text" placeholder="Search messages…" oninput="applySearch()">
+        <select class="select-sm" id="liveSource" onchange="applySearch()">
+            <option value="">All Sources</option>
+        </select>
+        <select class="select-sm" id="liveTimeRange" onchange="changeTimeRange()">
+            <option value="5">Last 5s</option>
+            <option value="30">Last 30s</option>
+            <option value="60" selected>Last 60s</option>
+            <option value="300">Last 5m</option>
+            <option value="900">Last 15m</option>
+        </select>
+        <div class="log-stats">
+            <div class="log-stat">Showing <span class="log-stat-val" id="liveRows">0</span></div>
+            <div class="log-stat">Emrg <span class="log-stat-val" style="color:var(--sev-critical)" id="liveEmrg">0</span></div>
+            <div class="log-stat">Crit <span class="log-stat-val" style="color:var(--sev-critical)" id="liveCrit">0</span></div>
+            <div class="log-stat">Err <span class="log-stat-val" style="color:var(--sev-error)" id="liveErr">0</span></div>
+            <div class="log-stat">Warn <span class="log-stat-val" style="color:var(--sev-warning)" id="liveWarn">0</span></div>
+        </div>
+        <button class="btn btn-ghost btn-sm" id="pauseBtn" onclick="togglePause()">&#9646;&#9646; Pause</button>
+        <button class="btn btn-ghost btn-sm" onclick="exportFeedCsv()">&#x2B07; CSV</button>
+    </div>
+
+    <div class="log-header">
+        <div class="log-header-cell">Timestamp</div>
+        <div class="log-header-cell">Severity</div>
+        <div class="log-header-cell">Host</div>
+        <div class="log-header-cell">Program</div>
+        <div class="log-header-cell">Facility</div>
+        <div class="log-header-cell">Type</div>
+        <div class="log-header-cell">Message</div>
+    </div>
+
+    <div id="logFeed" style="flex:1;overflow-y:auto;font-family:var(--font-mono);font-size:12px"></div>
+
+    <div class="feed-footer">
+        <div class="feed-footer-item">
+            <div class="live-badge"><div class="eyebrow-dot" id="liveDot"></div> LIVE</div>
+        </div>
+        <div class="feed-footer-item">Rate <span class="feed-footer-val" id="footerRate">—</span> /s</div>
+        <div class="feed-footer-item">Buffer <span class="feed-footer-val" id="footerBuffer">0</span></div>
+        <div class="feed-footer-item">Filtered <span class="feed-footer-val" id="footerFiltered">0</span></div>
+        <div class="feed-footer-item" style="margin-left:auto;color:var(--text-muted);font-size:10px" id="footerLastUpdate">—</div>
+    </div>
+
+</div>
+
+@section Scripts {
+<script>
+var paused = false;
+var activeSev = null;
+var lastSeconds = 60;
+var sevLabels = {0:'emergency',1:'alert',2:'critical',3:'error',4:'warning',5:'notice',6:'info',7:'debug'};
+var sevCounts = {emergency:0, alert:0, critical:0, error:0, warning:0};
+var knownSources = new Set();
+var seenIds = new Set();
+var lastFetchCount = 0;
+var lastFetchTime = Date.now();
+
+function esc(s) { var d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+function togglePause() {
+    paused = !paused;
+    document.getElementById('pauseBtn').textContent = paused ? '\u25B6 Resume' : '\u23F8 Pause';
+}
+
+function clearFeed() {
+    document.getElementById('logFeed').innerHTML = '';
+    seenIds.clear();
+    sevCounts = {emergency:0, alert:0, critical:0, error:0, warning:0};
+    document.getElementById('liveEmrg').textContent = '0';
+    document.getElementById('liveCrit').textContent = '0';
+    document.getElementById('liveErr').textContent  = '0';
+    document.getElementById('liveWarn').textContent = '0';
+    document.getElementById('liveRows').textContent = '0';
+    document.getElementById('footerBuffer').textContent = '0';
+}
+
+function setFilter(s, btn) {
+    activeSev = s;
+    document.querySelectorAll('.sev-btn').forEach(function(b) { b.classList.remove('active'); });
+    if (btn) btn.classList.add('active');
+    clearFeed();
+    fetchFeed();
+}
+
+function changeTimeRange() {
+    lastSeconds = parseInt(document.getElementById('liveTimeRange').value) || 60;
+    clearFeed();
+    fetchFeed();
+}
+
+function applySearch() {
+    var search = document.getElementById('liveSearch').value.toLowerCase();
+    var source = document.getElementById('liveSource').value.toLowerCase();
+    var feed = document.getElementById('logFeed');
+    var visible = 0, hidden = 0;
+    Array.from(feed.children).forEach(function(row) {
+        var msg  = (row.dataset.msg  || '').toLowerCase();
+        var host = (row.dataset.host || '').toLowerCase();
+        var show = (!search || msg.includes(search) || host.includes(search))
+                && (!source || host === source);
+        row.style.display = show ? '' : 'none';
+        if (show) visible++; else hidden++;
+    });
+    document.getElementById('liveRows').textContent = visible;
+    var filtEl = document.getElementById('footerFiltered');
+    if (filtEl) filtEl.textContent = hidden;
+}
+
+function updateSourceDropdown(hostname) {
+    if (!hostname || knownSources.has(hostname)) return;
+    knownSources.add(hostname);
+    var sel = document.getElementById('liveSource');
+    var opt = document.createElement('option');
+    opt.value = hostname.toLowerCase();
+    opt.textContent = hostname;
+    sel.appendChild(opt);
+}
+
+async function fetchFeed() {
+    if (paused) return;
+    var qs = '/api/logs/live?lastSeconds=' + lastSeconds + '&limit=50';
+    if (activeSev !== null) qs += '&severity=' + activeSev;
+    try {
+        var r = await fetch(qs);
+        if (!r.ok) return;
+        var data = await r.json();
+        if (!data || !data.length) return;
+        var feed = document.getElementById('logFeed');
+        data.forEach(function(e) {
+            if (e.id && seenIds.has(e.id)) return;
+            if (e.id) seenIds.add(e.id);
+            var sev = (sevLabels[e.severity] || 'info').toLowerCase();
+            var ts = e.receivedTime ? new Date(e.receivedTime).toLocaleString() : (e.eventTime ? new Date(e.eventTime).toLocaleString() : '');
+            var row = document.createElement('div');
+            row.className = 'log-row ' + sev;
+            row.dataset.msg  = e.message  || '';
+            row.dataset.host = e.hostname || '';
+                row.dataset.event = JSON.stringify(e);
+            row.addEventListener('click', function() { toggleDetail(this); });
+            var prog = e.program || '';
+            var cells = [
+                {cls:'log-cell timestamp', text: ts},
+                {cls:'log-cell', html: '<span class="sev-badge ' + sev + '">' + sev.toUpperCase() + '</span>'},
+                {cls:'log-cell host', text: e.hostname || ''},
+                {cls:'log-cell', text: prog, title: prog, style:'color:var(--text-muted)'},
+                {cls:'log-cell', text: e.facilityLabel || (e.facility != null ? 'f'+e.facility : ''), style:'color:var(--text-muted);font-size:11px'},
+                {cls:'log-cell', text: e.deviceType || '', style:'color:var(--text-muted)'},
+                {cls:'log-cell msg', text: e.message || ''}
+            ];
+            cells.forEach(function(c) {
+                var d = document.createElement('div');
+                d.className = c.cls;
+                if (c.style) d.style.cssText = c.style;
+                if (c.title) d.title = c.title;
+                if (c.html) d.innerHTML = c.html; else d.textContent = c.text;
+                row.appendChild(d);
+            });
+            if (sev === 'emergency' || sev === 'alert') sevCounts.emergency++;
+            else if (sev === 'critical')  sevCounts.critical++;
+            else if (sev === 'error')     sevCounts.error++;
+            else if (sev === 'warning')   sevCounts.warning++;
+            updateSourceDropdown(e.hostname);
+            feed.prepend(row);
+        });
+        while (feed.children.length > 300) feed.removeChild(feed.lastChild);
+        document.getElementById('liveEmrg').textContent = sevCounts.emergency;
+        document.getElementById('liveCrit').textContent = sevCounts.critical;
+        document.getElementById('liveErr').textContent  = sevCounts.error;
+        document.getElementById('liveWarn').textContent = sevCounts.warning;
+
+        // Update footer
+        var now = Date.now();
+        var elapsed = (now - lastFetchTime) / 1000;
+        var rate = elapsed > 0 ? (data.length / elapsed).toFixed(1) : '—';
+        lastFetchTime = now;
+        lastFetchCount = data.length;
+        document.getElementById('footerRate').textContent    = rate;
+        document.getElementById('footerBuffer').textContent  = feed.children.length;
+        document.getElementById('footerLastUpdate').textContent = 'Updated ' + new Date().toLocaleTimeString();
+        document.getElementById('liveDot').style.background = '#06d6a0';
+
+        applySearch(); // re-apply search/filter to update liveRows count + filtered count
+    } catch(ex) {
+        document.getElementById('liveDot').style.background = '#ff3b5c';
+    }
+}
+
+function toggleDetail(row) {
+    var next = row.nextElementSibling;
+    if (next && next.classList.contains('log-row-detail')) {
+        next.remove();
+        row.classList.remove('expanded');
+        return;
+    }
+    var e = {};
+    try { e = JSON.parse(row.dataset.event || '{}'); } catch(_) {}
+    var sevLabel = sevLabels[e.severity] || 'info';
+    var facLabel = e.facilityLabel || (e.facility != null ? 'f' + e.facility : '—');
+    var detail = document.createElement('div');
+    detail.className = 'log-row-detail';
+    detail.innerHTML =
+        '<div class="log-detail-msg">' + esc(e.message || '(no message)') + '</div>' +
+        '<div class="log-detail-meta">' +
+          '<div class="log-detail-item"><span class="log-detail-lbl">Host</span><span class="log-detail-val">' + esc(e.hostname || '—') + '</span></div>' +
+          '<div class="log-detail-item"><span class="log-detail-lbl">Program</span><span class="log-detail-val">' + esc(e.program || '—') + '</span></div>' +
+          '<div class="log-detail-item"><span class="log-detail-lbl">Severity</span><span class="log-detail-val">' + esc(sevLabel) + ' (' + (e.severity ?? '—') + ')</span></div>' +
+          '<div class="log-detail-item"><span class="log-detail-lbl">Facility</span><span class="log-detail-val">' + esc(facLabel) + '</span></div>' +
+          '<div class="log-detail-item"><span class="log-detail-lbl">Device Type</span><span class="log-detail-val">' + esc(e.deviceType || '—') + '</span></div>' +
+          '<div class="log-detail-item"><span class="log-detail-lbl">Event Time</span><span class="log-detail-val">' + esc(e.eventTime ? new Date(e.eventTime).toLocaleString() : '—') + '</span></div>' +
+          (e.sourceId ? '<div class="log-detail-item"><span class="log-detail-lbl">Source ID</span><span class="log-detail-val">' + e.sourceId + '</span></div>' : '') +
+        '</div>';
+    row.parentNode.insertBefore(detail, row.nextSibling);
+    row.classList.add('expanded');
+}
+
+function exportFeedCsv() {
+    var feed = document.getElementById('logFeed');
+    var headers = ['Timestamp','Severity','Host','Program','Facility','Type','Message'];
+    var rows = [headers.join(',')];
+    Array.from(feed.children).forEach(function(row) {
+        if (row.classList.contains('log-row-detail')) return; // skip detail panels
+        if (row.style.display === 'none') return;
+        var cells = Array.from(row.querySelectorAll('.log-cell'));
+        var vals = cells.map(function(c) {
+            return '"' + (c.textContent || '').trim().replace(/"/g,'""') + '"';
+        });
+        if (vals.length) rows.push(vals.join(','));
+    });
+    var blob = new Blob([rows.join('\n')], { type: 'text/csv' });
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'livefeed-' + new Date().toISOString().slice(0,19).replace(/:/g,'-') + '.csv';
+    a.click();
+}
+
+setInterval(fetchFeed, 2000);
+fetchFeed();
+</script>
+}

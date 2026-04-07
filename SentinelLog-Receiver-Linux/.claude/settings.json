@@ -1,0 +1,8 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//d/Syslog-Machine-agent/**)",
+      "Read(//d/Syslog-Machine-agent/publish/**)"
+    ]
+  }
+}

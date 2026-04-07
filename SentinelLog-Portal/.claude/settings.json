@@ -1,0 +1,37 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(curl -s http://localhost:5068 -o /dev/null -w \"WebUI: HTTP %{http_code}\\\\n\" --max-time 10)",
+      "Bash(echo \"Exit: $?\")",
+      "Bash(python3 -c \":*)",
+      "Bash(powershell -Command \":*)",
+      "Bash(powershell -Command \"Get-Content ''d:/syslog-UI/drs.scaffold.syslog/DRS.Scaffold.Syslog.WebUI/Controllers/DashboardController.cs'' | Select-Object -Skip 71 -First 18\")",
+      "Bash(powershell -Command \"Get-Content ''d:/syslog-UI/drs.scaffold.syslog/DRS.Scaffold.Syslog.WebUI/Controllers/DashboardController.cs'' | Select-Object -Skip 71 -First 20\")",
+      "Bash(powershell -Command \"Get-Content ''d:/syslog-UI/drs.scaffold.syslog/DRS.Scaffold.Syslog.WebUI/Controllers/DashboardController.cs'' | Select-Object -Skip 93 -First 10\")",
+      "Bash(powershell -Command \"Get-Content ''d:/syslog-UI/drs.scaffold.syslog/DRS.Scaffold.Syslog.WebUI/Controllers/DashboardController.cs'' | Select-Object -Skip 99 -First 8\")",
+      "Bash(find \"d:\\\\syslog-UI\\\\drs.scaffold.syslog\" -type f -name \"*.cs\" -exec grep -l \"\\\\.SystemLogs\\\\|db\\\\.Add\\\\|INSERT INTO systemlogs\" {})",
+      "Bash(find /d/syslog-UI -name *SettingsManager* -o -name *ISettingsManager*)",
+      "Bash(find d:syslog-UI -type f -name *Settings*)",
+      "Bash(find \"d:\\\\syslog-UI\\\\drs.scaffold.syslog\" -type f \\\\\\( -name \"*.bak\" -o -name \"*.tmp\" -o -name \"*.orig\" -o -name \"*.log\" -o -name \"*~$\" \\\\\\))",
+      "Bash(find d:syslog-UIdrs.scaffold.syslog -type f -name *.vsidx)",
+      "Bash(grep \"\\\\.cs$\")",
+      "Bash(ls \"d:/syslog-UI/drs.scaffold.syslog/\"*.user)",
+      "Bash(ls \"d:/syslog-UI/drs.scaffold.syslog/\"*.slnLaunch*)",
+      "Bash(grep -E \"\\\\.cs$|Workers\")",
+      "Bash(find \"/d/syslog-UI/drs.scaffold.syslog/DRS.Scaffold.Syslog.API/Controllers\" -name \"*.cs\" -exec head -50 {} +)",
+      "Bash(find \"d:\\\\syslog-UI\\\\drs.scaffold.syslog\" -type f -name \"*.cs\" ! -path \"*/obj/*\" ! -path \"*/bin/*\" -exec wc -l {} +)",
+      "Bash(xargs wc:*)",
+      "Bash(xargs -0 wc -l)",
+      "Bash(find /d/syslog-UI/drs.scaffold.syslog/drs.scaffold.syslog.webapi -type f -name *.cs ! -path */obj/* ! -path */bin/*)",
+      "Bash(find \"/d/syslog-UI/drs.scaffold.syslog\" -type f -name \"*ViewModels*\" ! -path \"*/obj/*\" ! -path \"*/bin/*\" -exec wc -l {} +)",
+      "Bash(find \"/d/syslog-UI/drs.scaffold.syslog\" -type f -name \"*Notification*\" ! -path \"*/obj/*\" ! -path \"*/bin/*\" -exec wc -l {} +)",
+      "Bash(find \"/d/syslog-UI/drs.scaffold.syslog/DRS.Scaffold.Syslog.Middleware/Repositories\" -type f -name \"*.cs\" ! -path \"*/obj/*\" ! -path \"*/bin/*\" -exec basename {})",
+      "Bash(find \"/d/syslog-UI/drs.scaffold.syslog\" -type f -name \"*.cs\" ! -path \"*/obj/*\" ! -path \"*/bin/*\" -exec wc -l {} +)",
+      "Read(//d/syslog-UI/**)",
+      "Bash(find \"/d/syslog-UI/drs.scaffold.syslog\" -path \"*/Migrations/*.cs\" ! -path \"*/obj/*\" ! -path \"*/bin/*\" ! -name \"*Designer.cs\" ! -name \"*Snapshot.cs\" -exec wc -l {} +)",
+      "Bash(find \"/d/syslog-UI/drs.scaffold.syslog\" -type f -name \"*Controller.cs\" ! -path \"*/obj/*\" ! -path \"*/bin/*\" -exec wc -l {} +)",
+      "Bash(rm -f \"DRS.Scaffold.Syslog.WebUI/Services/SentinelApiClient.cs\")",
+      "Bash(rm -rf \"drs.scaffold.syslog.webapi\")"
+    ]
+  }
+}

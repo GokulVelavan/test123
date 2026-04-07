@@ -1,0 +1,3 @@
+﻿Sent both events at 21:54:07
+  IN filter:  Application EventID 1000 - message contains FILTER-TEST-IN
+  NOT filter: Application EventID 9999 - message contains FILTER-TEST-OUT

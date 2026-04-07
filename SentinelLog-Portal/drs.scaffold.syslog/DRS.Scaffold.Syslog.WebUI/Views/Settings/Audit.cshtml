@@ -1,0 +1,101 @@
+@{
+    Layout = "_AppLayout";
+    ViewData["Title"] = "Settings &middot; Audit Log";
+    ViewData["TopbarMeta"] = "Platform-level admin activity";
+}
+
+@await Html.PartialAsync("_SettingsNav")
+<div style="padding:20px;display:flex;flex-direction:column;gap:16px">
+
+    <div class="panel">
+        <div class="panel-header">
+            <div class="panel-title">Audit Log</div>
+            <div class="panel-controls">
+                <input class="log-search-input" id="auditHostInput" placeholder="Host…" oninput="auditDebounce()" style="width:120px">
+                <input class="log-search-input" id="auditProgramInput" placeholder="Program…" oninput="auditDebounce()" style="width:120px">
+                <input class="log-search-input" id="auditIpInput" placeholder="Source IP…" oninput="auditDebounce()" style="width:120px">
+                <input class="form-input" id="auditFrom" type="datetime-local" onchange="auditReset()" style="font-size:11px;padding:4px 8px;height:30px">
+                <input class="form-input" id="auditTo"   type="datetime-local" onchange="auditReset()" style="font-size:11px;padding:4px 8px;height:30px">
+                <button class="btn btn-ghost btn-sm" onclick="auditClear()">Clear</button>
+            </div>
+        </div>
+        <div id="auditTable" class="table-wrap">
+            <div style="padding:1.5rem;color:var(--text-muted)">Loading&hellip;</div>
+        </div>
+        <div id="auditPagination" class="pagination" style="display:none">
+            <button class="page-btn" id="auditPrevBtn" onclick="auditChangePage(-1)">&larr; Prev</button>
+            <span class="page-info" id="auditPageInfo">Page 1</span>
+            <button class="page-btn" id="auditNextBtn" onclick="auditChangePage(1)">Next &rarr;</button>
+        </div>
+    </div>
+
+</div>
+
+@section Scripts {
+<script>
+var auditPage       = 1;
+var auditPageSize   = 50;
+var auditTotalPages = 1;
+var auditTimer      = null;
+
+function esc(s) { var d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+async function loadAudit() {
+    var host    = document.getElementById('auditHostInput').value.trim();
+    var program = document.getElementById('auditProgramInput').value.trim();
+    var ip      = document.getElementById('auditIpInput').value.trim();
+    var from    = document.getElementById('auditFrom').value;
+    var to      = document.getElementById('auditTo').value;
+
+    var qs = '/api/settings/system-logs?page=' + auditPage + '&pageSize=' + auditPageSize;
+    if (host)    qs += '&host='      + encodeURIComponent(host);
+    if (program) qs += '&program='   + encodeURIComponent(program);
+    if (ip)      qs += '&sourceIp='  + encodeURIComponent(ip);
+    if (from)    qs += '&dateFrom='  + encodeURIComponent(from);
+    if (to)      qs += '&dateTo='    + encodeURIComponent(to);
+
+    try {
+        const r = await fetch(qs);
+        if (!r.ok) { document.getElementById('auditTable').innerHTML = '<div style="padding:1.5rem;color:var(--sev-error)">Failed to load audit log.</div>'; return; }
+        const d = await r.json();
+        auditTotalPages = (d.totalPages ?? Math.ceil((d.totalCount ?? 0) / auditPageSize)) || 1;
+
+        const rows = (d.items ?? []).map(e => {
+            const ts = e.logDatetime ? new Date(e.logDatetime).toLocaleString() : '';
+            return `<tr>
+                <td class="mono" style="font-size:11px;white-space:nowrap">${esc(ts)}</td>
+                <td class="mono" style="color:var(--accent-cyan)">${esc(e.host ?? '—')}</td>
+                <td class="mono" style="color:var(--text-muted)">${esc(e.program ?? '—')}</td>
+                <td class="mono" style="color:var(--text-muted);font-size:11px">${esc(e.pid ?? '')}</td>
+                <td class="mono" style="color:var(--text-muted);font-size:11px">${esc(e.sourceIp ?? '—')}</td>
+                <td style="color:var(--text-secondary)">${esc(e.message ?? '')}</td>
+            </tr>`;
+        }).join('');
+
+        document.getElementById('auditTable').innerHTML = rows.length
+            ? `<table class="data-table"><thead><tr>
+                <th>Time</th><th>Host</th><th>Program</th><th>PID</th><th>Source IP</th><th>Message</th>
+               </tr></thead><tbody>${rows}</tbody></table>`
+            : '<div style="padding:1.5rem;color:var(--text-muted)">No audit log entries found.</div>';
+
+        var pg = document.getElementById('auditPagination');
+        if (auditTotalPages > 1) {
+            document.getElementById('auditPageInfo').textContent = 'Page ' + auditPage + ' of ' + auditTotalPages;
+            document.getElementById('auditPrevBtn').disabled = auditPage <= 1;
+            document.getElementById('auditNextBtn').disabled = auditPage >= auditTotalPages;
+            pg.style.display = 'flex';
+        } else { pg.style.display = 'none'; }
+    } catch { document.getElementById('auditTable').innerHTML = '<div style="padding:1.5rem;color:var(--sev-error)">Network error.</div>'; }
+}
+
+function auditReset() { auditPage = 1; loadAudit(); }
+function auditDebounce() { clearTimeout(auditTimer); auditTimer = setTimeout(auditReset, 300); }
+function auditChangePage(d) { var n = auditPage + d; if (n < 1 || n > auditTotalPages) return; auditPage = n; loadAudit(); }
+function auditClear() {
+    ['auditHostInput','auditProgramInput','auditIpInput','auditFrom','auditTo'].forEach(id => { document.getElementById(id).value = ''; });
+    auditReset();
+}
+
+loadAudit();
+</script>
+}

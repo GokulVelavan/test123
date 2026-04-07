@@ -1,0 +1,21 @@
+{
+  "permissions": {
+    "allow": [
+      "Read(//d/Deployment/SentinelLog/**)",
+      "Bash(du -sh SentinelLog-*/  SentinelLog-Portal/)",
+      "Bash(du -sh SentinelLog-Installer/*)",
+      "Bash(du -sh SentinelLog-Agent-Linux/*)",
+      "Bash(du -sh SentinelLog-Agent-Windows/*)",
+      "Bash(git check-ignore:*)",
+      "Bash(git add:*)",
+      "Bash(git rm:*)",
+      "Bash(git commit:*)",
+      "Bash(git branch:*)",
+      "Bash(git push:*)",
+      "Bash(git count-objects:*)",
+      "Bash(git reflog:*)",
+      "Bash(git gc:*)",
+      "Bash(git checkout:*)"
+    ]
+  }
+}

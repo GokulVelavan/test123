@@ -1,0 +1,51 @@
+################################################################################
+# .NET / Visual Studio
+################################################################################
+
+## Build results
+[Bb]in/
+[Oo]bj/
+[Dd]ebug/
+[Rr]elease/
+
+## Visual Studio
+.vs/
+*.suo
+*.user
+*.userosscache
+*.sln.docstates
+*.vsidx
+
+## NuGet
+**/packages/*
+!**/packages/build/
+*.nupkg
+**/[Pp]ackages/
+
+## Rider / JetBrains
+.idea/
+*.sln.iml
+
+## OS files
+Thumbs.db
+ehthumbs.db
+Desktop.ini
+.DS_Store
+
+## User-specific
+*.rsuser
+*.suo
+*.user
+*.sln.docstates
+launchSettings.json
+
+## Build logs
+*.log
+msbuild*.wrn
+msbuild*.err
+
+## Temp / generated
+~$*
+*.tmp
+*.bak
+*.swp

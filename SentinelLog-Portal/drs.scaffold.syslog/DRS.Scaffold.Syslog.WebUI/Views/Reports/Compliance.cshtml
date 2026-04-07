@@ -1,0 +1,144 @@
+@{
+    Layout = "_AppLayout";
+    ViewData["Title"] = "Reports — Compliance";
+    ViewData["TopbarMeta"] = "Compliance framework audit reports";
+}
+@await Html.PartialAsync("_ReportsNav")
+<div style="padding:20px;display:flex;flex-direction:column;gap:16px">
+
+    <div class="panel">
+        <div class="panel-header">
+            <div class="panel-title">Generate Compliance Report</div>
+            <div class="panel-controls">
+                <select class="select-sm" id="compFramework">
+                    <option value="pci-dss">PCI-DSS v4.0</option>
+                    <option value="hipaa">HIPAA / HITECH</option>
+                    <option value="sox">SOX (Sarbanes-Oxley)</option>
+                    <option value="gdpr">GDPR</option>
+                    <option value="nist">NIST CSF</option>
+                    <option value="nist-800-53">NIST 800-53</option>
+                    <option value="soc2">SOC 2 Type II</option>
+                    <option value="iso27001">ISO 27001</option>
+                    <option value="nerc-cip">NERC CIP</option>
+                    <option value="cis">CIS Controls</option>
+                </select>
+                <select class="select-sm" id="compDays">
+                    <option value="7">Last 7 days</option>
+                    <option value="30" selected>Last 30 days</option>
+                    <option value="90">Last 90 days</option>
+                    <option value="365">Last 365 days</option>
+                </select>
+                <button class="btn btn-accent btn-sm" id="genReportBtn" onclick="generateReport()">Generate Report</button>
+                <div id="dlBtns" style="display:none;gap:6px">
+                    <button class="btn btn-sm" style="color:var(--accent-cyan);background:transparent;border:1px solid var(--accent-cyan)" onclick="downloadComplianceCsv()">&#8615; CSV</button>
+                    <button class="btn btn-sm" style="color:var(--accent-cyan);background:transparent;border:1px solid var(--accent-cyan)" onclick="downloadComplianceJson()">&#8615; JSON</button>
+                </div>
+            </div>
+        </div>
+        <div id="complianceResult" style="padding:1.5rem;color:var(--text-muted)">Select a framework and period, then click Generate Report.</div>
+    </div>
+
+</div>
+
+@section Scripts {
+<script>
+function esc(s) { var d = document.createElement('div'); d.textContent = String(s ?? ''); return d.innerHTML; }
+
+var _lastReport = null;
+
+async function generateReport() {
+    const framework = document.getElementById('compFramework').value;
+    const days      = document.getElementById('compDays').value;
+    const btn       = document.getElementById('genReportBtn');
+    const result    = document.getElementById('complianceResult');
+
+    btn.disabled = true; btn.textContent = 'Generating\u2026';
+    result.innerHTML = '<div style="color:var(--text-muted)">Generating report\u2026</div>';
+    document.getElementById('dlBtns').style.display = 'none';
+    _lastReport = null;
+
+    try {
+        const r = await fetch('/api/reports/compliance?framework=' + encodeURIComponent(framework) + '&days=' + days);
+        if (!r.ok) { result.innerHTML = '<div style="color:var(--sev-error)">Failed to generate report.</div>'; return; }
+        const d = await r.json();
+        _lastReport = d;
+
+        const fwLabel = document.getElementById('compFramework').options[document.getElementById('compFramework').selectedIndex].text;
+        result.innerHTML = `
+            <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:16px;margin-bottom:20px">
+                <div style="background:var(--bg-elevated);border-radius:8px;padding:16px;border:1px solid var(--border)">
+                    <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Total Events</div>
+                    <div style="font-size:24px;font-weight:700;color:var(--accent-cyan)">${(d.totalEvents ?? 0).toLocaleString()}</div>
+                    <div style="font-size:11px;color:var(--text-muted)">${d.period}</div>
+                </div>
+                <div style="background:var(--bg-elevated);border-radius:8px;padding:16px;border:1px solid var(--border)">
+                    <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Critical Events</div>
+                    <div style="font-size:24px;font-weight:700;color:var(--sev-error)">${(d.criticalEvents ?? 0).toLocaleString()}</div>
+                    <div style="font-size:11px;color:var(--text-muted)">${esc(d.criticalLabel)}</div>
+                </div>
+                <div style="background:var(--bg-elevated);border-radius:8px;padding:16px;border:1px solid var(--border)">
+                    <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Auth Failures</div>
+                    <div style="font-size:24px;font-weight:700;color:var(--sev-warning)">${(d.authFailures ?? 0).toLocaleString()}</div>
+                    <div style="font-size:11px;color:var(--text-muted)">${esc(d.authLabel)}</div>
+                </div>
+                <div style="background:var(--bg-elevated);border-radius:8px;padding:16px;border:1px solid var(--border)">
+                    <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Policy Violations</div>
+                    <div style="font-size:24px;font-weight:700;color:var(--sev-warning)">${(d.policyViolations ?? 0).toLocaleString()}</div>
+                    <div style="font-size:11px;color:var(--text-muted)">${esc(d.policyLabel)}</div>
+                </div>
+            </div>
+            <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:12px">
+                <div style="font-size:13px;font-weight:600;color:var(--text-primary)">${esc(fwLabel)} Report \u2014 ${esc(d.period)}</div>
+                <div style="font-size:11px;color:var(--text-muted)">Generated: ${new Date(d.generatedAt).toLocaleString()}</div>
+            </div>
+            ${d.recentCritical.length ? `
+            <div style="font-size:12px;font-weight:600;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:8px">Recent Critical Events</div>
+            <table class="data-table">
+                <thead><tr><th>Time</th><th>Severity</th><th>Host</th><th>Message</th></tr></thead>
+                <tbody>${d.recentCritical.map(e => `<tr>
+                    <td class="mono" style="font-size:11px">${new Date(e.timestamp).toLocaleString()}</td>
+                    <td><span class="sev-badge critical">${esc(e.severity)}</span></td>
+                    <td class="mono" style="color:var(--accent-cyan)">${esc(e.host ?? '\u2014')}</td>
+                    <td style="color:var(--text-muted);font-size:12px">${esc(e.message ?? '\u2014')}</td>
+                </tr>`).join('')}</tbody>
+            </table>` : '<div style="color:var(--text-muted);font-size:13px">No critical events in this period.</div>'}`;
+
+        document.getElementById('dlBtns').style.display = 'flex';
+    } catch { result.innerHTML = '<div style="color:var(--sev-error)">Network error.</div>'; }
+    finally { btn.disabled = false; btn.textContent = 'Generate Report'; }
+}
+
+function triggerDownload(blob, fileName) {
+    const url = URL.createObjectURL(blob);
+    const a   = document.createElement('a');
+    a.href = url; a.download = fileName; a.click();
+    URL.revokeObjectURL(url);
+}
+
+function downloadComplianceJson() {
+    if (!_lastReport) return;
+    const json = JSON.stringify(_lastReport, null, 2);
+    const fw   = document.getElementById('compFramework').value;
+    const days = document.getElementById('compDays').value;
+    triggerDownload(new Blob([json], { type: 'application/json' }), `compliance_${fw}_${days}d.json`);
+}
+
+function downloadComplianceCsv() {
+    if (!_lastReport) return;
+    const d    = _lastReport;
+    const fw   = document.getElementById('compFramework').value;
+    const days = document.getElementById('compDays').value;
+    const esc  = v => v == null ? '' : '"' + String(v).replace(/"/g, '""') + '"';
+
+    const lines = [
+        'Framework,Period,GeneratedAt,TotalEvents,CriticalEvents,AuthFailures,PolicyViolations',
+        `${esc(d.framework)},${esc(d.period)},${esc(d.generatedAt)},${d.totalEvents},${d.criticalEvents},${d.authFailures},${d.policyViolations}`,
+        '',
+        'RecentCriticalEvents',
+        'Time,Severity,Host,Message',
+        ...d.recentCritical.map(e => `${esc(e.timestamp)},${esc(e.severity)},${esc(e.host)},${esc(e.message)}`)
+    ];
+    triggerDownload(new Blob([lines.join('\r\n')], { type: 'text/csv' }), `compliance_${fw}_${days}d.csv`);
+}
+</script>
+}

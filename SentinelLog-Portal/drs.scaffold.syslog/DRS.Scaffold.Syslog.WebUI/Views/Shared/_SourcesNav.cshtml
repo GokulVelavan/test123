@@ -1,0 +1,7 @@
+@{
+    var action = ViewContext.RouteData.Values["action"]?.ToString() ?? "";
+    string Tab(string a) => action.Equals(a, StringComparison.OrdinalIgnoreCase) ? "sub-nav-item active" : "sub-nav-item";
+}
+<div class="sub-nav">
+    <a class="@Tab("Index")"     asp-controller="Sources" asp-action="Index">Inventory</a>
+</div>

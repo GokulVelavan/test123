@@ -1,0 +1,1 @@
+// SentinelLog shared utilities

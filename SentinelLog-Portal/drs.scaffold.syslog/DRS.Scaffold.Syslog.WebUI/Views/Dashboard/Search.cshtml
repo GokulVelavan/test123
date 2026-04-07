@@ -1,0 +1,350 @@
+@model LogSearchViewModel
+@{
+    Layout = "_AppLayout";
+    ViewData["Title"] = "Log Search";
+    ViewData["TopbarMeta"] = "Query across all ingested events";
+}
+
+<div class="panel" style="margin:20px 20px 0">
+    <form asp-action="Search" method="get" class="search-form">
+        <div class="search-grid">
+            <div class="form-group">
+                <label class="form-label">Keyword / Message</label>
+                <input class="form-input" asp-for="Keyword" placeholder="auth failure, timeout…" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">Host</label>
+                <input class="form-input" asp-for="Host" placeholder="fw-core-01" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">Program</label>
+                <input class="form-input" asp-for="Program" placeholder="sshd" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">Source IP / CIDR</label>
+                <input class="form-input" asp-for="SourceIp" placeholder="10.0.0.1 or 10.0.0.0/24" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">Severity</label>
+                <select class="form-input" asp-for="Severity">
+                    <option value="">Any</option>
+                    <option value="Emergency">Emergency</option>
+                    <option value="Alert">Alert</option>
+                    <option value="Critical">Critical</option>
+                    <option value="Error">Error</option>
+                    <option value="Warning">Warning</option>
+                    <option value="Notice">Notice</option>
+                    <option value="Info">Info</option>
+                    <option value="Debug">Debug</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label class="form-label">Source Type</label>
+                <input class="form-input" asp-for="DeviceType" placeholder="Security, Generic, OS…" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">Facility</label>
+                <select class="form-input" asp-for="Facility">
+                    <option value="">Any</option>
+                    <option value="kern">kern (0)</option>
+                    <option value="user">user (1)</option>
+                    <option value="mail">mail (2)</option>
+                    <option value="daemon">daemon (3)</option>
+                    <option value="auth">auth (4)</option>
+                    <option value="syslog">syslog (5)</option>
+                    <option value="local0">local0</option>
+                    <option value="local1">local1</option>
+                    <option value="local7">local7</option>
+                </select>
+            </div>
+            <div class="form-group">
+                <label class="form-label">From</label>
+                <input class="form-input" asp-for="DateFrom" type="datetime-local" />
+            </div>
+            <div class="form-group">
+                <label class="form-label">To</label>
+                <input class="form-input" asp-for="DateTo" type="datetime-local" />
+            </div>
+            <div class="form-group" style="justify-content:flex-end">
+                <div style="display:flex;gap:6px;justify-content:flex-end;align-items:center">
+                    <button type="submit" class="btn btn-accent">&#128269; Search</button>
+                    @if (Model.Results.Any() || Context.Request.QueryString.HasValue)
+                    {
+                        <a asp-action="Search" class="btn btn-ghost btn-sm">Clear</a>
+                    }
+                </div>
+            </div>
+        </div>
+    </form>
+</div>
+
+@* ── Saved Searches Bar ─────────────────────────────────────────────────────── *@
+<div style="margin:8px 20px 0;display:flex;gap:8px;align-items:center;flex-wrap:wrap" id="savedSearchBar">
+    <span style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px">Saved:</span>
+    <div id="savedSearchPills" style="display:flex;gap:6px;flex-wrap:wrap;flex:1">
+        <span style="font-size:12px;color:var(--text-muted)">Loading…</span>
+    </div>
+    @if (Context.Request.QueryString.HasValue)
+    {
+        <button class="btn btn-sm" style="font-size:11px;padding:3px 10px;background:transparent;border:1px solid var(--border);color:var(--accent-cyan)" onclick="openSaveSearchModal()">&#x2665; Save Search</button>
+    }
+</div>
+
+<div style="padding:16px 20px;display:flex;gap:16px;align-items:flex-start">
+
+<!-- Facets Sidebar (#41) -->
+<div id="facetsSidebar" style="width:200px;flex-shrink:0;display:none">
+    <div class="panel" style="padding:0">
+        <div class="panel-header" style="padding:10px 14px">
+            <div class="panel-title" style="font-size:13px">Facets</div>
+        </div>
+        <div id="facetsContent" style="padding:10px 14px;display:flex;flex-direction:column;gap:14px">
+            <div style="color:var(--text-muted);font-size:12px">Loading&hellip;</div>
+        </div>
+    </div>
+</div>
+
+<div style="flex:1;display:flex;flex-direction:column;gap:16px">
+
+@* Active filter tags *@
+@{
+    var activeTags = new List<(string Label, string Param)>();
+    if (!string.IsNullOrWhiteSpace(Model.Keyword))    activeTags.Add(($"Keyword: {Model.Keyword}", "keyword"));
+    if (!string.IsNullOrWhiteSpace(Model.Host))       activeTags.Add(($"Host: {Model.Host}", "host"));
+    if (!string.IsNullOrWhiteSpace(Model.Program))    activeTags.Add(($"Program: {Model.Program}", "program"));
+    if (!string.IsNullOrWhiteSpace(Model.SourceIp))   activeTags.Add(($"IP: {Model.SourceIp}", "sourceIp"));
+    if (!string.IsNullOrWhiteSpace(Model.Severity))   activeTags.Add(($"Severity: {Model.Severity}", "severity"));
+    if (!string.IsNullOrWhiteSpace(Model.DeviceType)) activeTags.Add(($"Type: {Model.DeviceType}", "deviceType"));
+    if (!string.IsNullOrWhiteSpace(Model.Facility))   activeTags.Add(($"Facility: {Model.Facility}", "facility"));
+    if (!string.IsNullOrWhiteSpace(Model.DateFrom))   activeTags.Add(($"From: {Model.DateFrom}", "dateFrom"));
+    if (!string.IsNullOrWhiteSpace(Model.DateTo))     activeTags.Add(($"To: {Model.DateTo}", "dateTo"));
+}
+@if (activeTags.Any())
+{
+    <div class="filter-tags">
+        <span style="font-size:10px;color:var(--text-muted);text-transform:uppercase;letter-spacing:0.6px;font-family:var(--font-ui)">Active filters:</span>
+        @foreach (var tag in activeTags)
+        {
+            var removeUrl = Url.Action("Search", new {
+                keyword    = tag.Param == "keyword"    ? null : Model.Keyword,
+                host       = tag.Param == "host"       ? null : Model.Host,
+                program    = tag.Param == "program"    ? null : Model.Program,
+                sourceIp   = tag.Param == "sourceIp"  ? null : Model.SourceIp,
+                severity   = tag.Param == "severity"   ? null : Model.Severity,
+                deviceType = tag.Param == "deviceType" ? null : Model.DeviceType,
+                facility   = tag.Param == "facility"   ? null : Model.Facility,
+                dateFrom   = tag.Param == "dateFrom"   ? null : Model.DateFrom,
+                dateTo     = tag.Param == "dateTo"     ? null : Model.DateTo,
+                page = 1
+            });
+            <a class="filter-tag" href="@removeUrl">@tag.Label &times;</a>
+        }
+    </div>
+}
+
+@if (Model.Results.Any())
+{
+    <div class="panel">
+        <div class="panel-header">
+            <div class="panel-title">Results</div>
+            <div class="panel-controls" style="gap:8px">
+                <span class="panel-sub">@Model.TotalCount.ToString("N0") results &middot; @Model.QueryTimeMs ms</span>
+                        <select class="select-sm" onchange="changeSortOrder(this.value)">
+                            <option value="desc" selected="@(Model.SortOrder == "desc")">Newest received</option>
+                            <option value="asc" selected="@(Model.SortOrder == "asc")">Oldest received</option>
+                        </select>
+                <button class="btn btn-ghost btn-sm" onclick="exportCsv()">&#x2B07; Export CSV</button>
+            </div>
+        </div>
+        <div class="table-wrap">
+            <table class="data-table">
+                <thead>
+                    <tr>
+                        <th>Received</th><th>Event Time</th><th>Sev</th><th>Host</th><th>Program</th>
+                        <th>Source IP</th><th>Message</th>
+                    </tr>
+                </thead>
+                <tbody>
+                    @foreach (var r in Model.Results)
+                    {
+                        var sev = (r.SeverityLabel ?? "info").ToLower();
+                        <tr>
+                            <td class="mono" style="white-space:nowrap">@r.ReceivedTime</td>
+                            <td class="mono" style="color:var(--text-muted);white-space:nowrap;font-size:11px">@r.LogDatetime</td>
+                            <td><span class="sev-badge @sev">@sev.ToUpper()</span></td>
+                            <td class="mono" style="color:var(--accent-cyan)">@r.Host</td>
+                            <td class="mono">@r.Program</td>
+                            <td class="mono" style="color:var(--text-muted)">@r.SourceIp</td>
+                            <td style="color:var(--text-muted)">@r.Message</td>
+                        </tr>
+                    }
+                </tbody>
+            </table>
+        </div>
+        @{
+            var prev  = Model.Page - 1;
+            var next  = Model.Page + 1;
+            var total = (int)Math.Ceiling((double)Model.TotalCount / Model.PageSize);
+        }
+        <div class="pagination">
+            @if (Model.Page > 1)
+            {
+                <a asp-action="Search"
+                   asp-route-host="@Model.Host" asp-route-program="@Model.Program"
+                   asp-route-sourceIp="@Model.SourceIp" asp-route-dateFrom="@Model.DateFrom"
+                   asp-route-dateTo="@Model.DateTo" asp-route-keyword="@Model.Keyword"
+                   asp-route-severity="@Model.Severity" asp-route-facility="@Model.Facility"
+                   asp-route-deviceType="@Model.DeviceType" asp-route-sortOrder="@Model.SortOrder"
+                   asp-route-page="@prev" asp-route-pageSize="@Model.PageSize"
+                   class="page-btn">&larr; Prev</a>
+            }
+            <span class="page-info">Page @Model.Page of @total</span>
+            @if (Model.Page < total)
+            {
+                <a asp-action="Search"
+                   asp-route-host="@Model.Host" asp-route-program="@Model.Program"
+                   asp-route-sourceIp="@Model.SourceIp" asp-route-dateFrom="@Model.DateFrom"
+                   asp-route-dateTo="@Model.DateTo" asp-route-keyword="@Model.Keyword"
+                   asp-route-severity="@Model.Severity" asp-route-facility="@Model.Facility"
+                   asp-route-deviceType="@Model.DeviceType" asp-route-sortOrder="@Model.SortOrder"
+                   asp-route-page="@next" asp-route-pageSize="@Model.PageSize"
+                   class="page-btn">Next &rarr;</a>
+            }
+        </div>
+    </div>
+}
+else if (Context.Request.QueryString.HasValue)
+{
+    <div class="panel">
+        <div style="padding:2rem;text-align:center;color:var(--text-muted)">No results found for the given filters.</div>
+    </div>
+}
+</div><!-- /flex:1 results column -->
+</div><!-- /outer flex row -->
+
+@section Scripts {
+<script>
+/* ── Facets sidebar (#41) ────────────────────────────────── */
+(async function loadFacets() {
+    try {
+        const r = await fetch('/api/logs/search/facets');
+        if (!r.ok) return;
+        const facets = await r.json();
+        if (!facets.length) return;
+
+        const sidebar  = document.getElementById('facetsSidebar');
+        const content  = document.getElementById('facetsContent');
+        sidebar.style.display = '';
+
+        const html = facets.map(f => {
+            if (!f.items || !f.items.length) return '';
+            const items = f.items.slice(0, 8).map(item => {
+                const url = new URL(window.location.href);
+                url.searchParams.set(fieldToParam(f.field), item.value);
+                url.searchParams.set('page', '1');
+                return `<div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:3px">
+                    <a href="${url.toString()}" style="font-size:12px;color:var(--accent-cyan);white-space:nowrap;overflow:hidden;text-overflow:ellipsis;max-width:130px" title="${item.value}">${item.value}</a>
+                    <span style="font-size:10px;color:var(--text-muted);flex-shrink:0;margin-left:4px">${item.count.toLocaleString()}</span>
+                </div>`;
+            }).join('');
+            return `<div>
+                <div style="font-size:10px;text-transform:uppercase;letter-spacing:.5px;color:var(--text-muted);margin-bottom:6px">${fieldToLabel(f.field)}</div>
+                ${items}
+            </div>`;
+        }).join('');
+        content.innerHTML = html || '<div style="color:var(--text-muted);font-size:12px">No facet data.</div>';
+    } catch (_) {}
+})();
+
+function fieldToParam(field) {
+    const map = { 'hostname': 'host', 'severity': 'severity', 'devicetype': 'deviceType', 'program': 'program' };
+    return map[field.toLowerCase()] || field;
+}
+
+function fieldToLabel(field) {
+    const map = { 'hostname': 'HOSTNAME', 'severity': 'SEVERITY', 'deviceType': 'SOURCE TYPE', 'program': 'PROGRAM' };
+    return map[field] || field.toUpperCase();
+}
+
+function changeSortOrder(order) {
+    var url = new URL(window.location.href);
+    url.searchParams.set('sortOrder', order);
+    url.searchParams.set('page', '1');
+    window.location.href = url.toString();
+}
+
+function exportCsv() {
+    var table = document.querySelector('.data-table');
+    if (!table) return;
+    var rows = Array.from(table.querySelectorAll('tr'));
+    var csv = rows.map(row =>
+        Array.from(row.querySelectorAll('th,td'))
+            .map(cell => '"' + cell.textContent.trim().replace(/"/g, '""') + '"')
+            .join(',')
+    ).join('\n');
+    var blob = new Blob([csv], { type: 'text/csv' });
+    var a = document.createElement('a');
+    a.href = URL.createObjectURL(blob);
+    a.download = 'sentinellog-search-' + new Date().toISOString().slice(0,19).replace(/:/g,'-') + '.csv';
+    a.click();
+}
+
+/* ── Saved Searches ──────────────────────────────────────── */
+(async function loadSavedSearches() {
+    try {
+        const r = await fetch('/api/saved-searches');
+        if (!r.ok) return;
+        const items = await r.json();
+        const pills = document.getElementById('savedSearchPills');
+        if (!items.length) { pills.innerHTML = '<span style="font-size:12px;color:var(--text-muted)">None saved</span>'; return; }
+        pills.innerHTML = items.map(s => `
+            <a href="${buildSavedSearchUrl(s.queryJson)}"
+               style="font-size:11px;padding:3px 10px;border-radius:12px;background:var(--accent-cyan)22;color:var(--accent-cyan);border:1px solid var(--accent-cyan)44;text-decoration:none;white-space:nowrap"
+               title="${escHtml(s.description || s.name)}">${escHtml(s.name)}</a>
+            <button onclick="deleteSavedSearch(${s.id})" style="margin-left:-4px;font-size:10px;background:none;border:none;color:var(--text-muted);cursor:pointer" title="Remove">&#x2715;</button>`
+        ).join('');
+    } catch {}
+})();
+
+function buildSavedSearchUrl(queryJson) {
+    try {
+        const q = JSON.parse(queryJson);
+        const url = new URL('/dashboard/search', window.location.origin);
+        if (q.keyword)    url.searchParams.set('keyword',    q.keyword);
+        if (q.host)       url.searchParams.set('host',       q.host);
+        if (q.severity)   url.searchParams.set('severity',   q.severity);
+        if (q.program)    url.searchParams.set('program',    q.program);
+        if (q.sourceIp)   url.searchParams.set('sourceIp',   q.sourceIp);
+        if (q.deviceType) url.searchParams.set('deviceType', q.deviceType);
+        if (q.facility)   url.searchParams.set('facility',   q.facility);
+        if (q.dateFrom)   url.searchParams.set('dateFrom',   q.dateFrom);
+        if (q.dateTo)     url.searchParams.set('dateTo',     q.dateTo);
+        return url.toString();
+    } catch { return '#'; }
+}
+
+function escHtml(s) { var d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+function openSaveSearchModal() {
+    var name = prompt('Name for this saved search:');
+    if (!name) return;
+    var qs   = window.location.search;
+    var params = new URLSearchParams(qs);
+    var q = {};
+    ['keyword','host','severity','program','sourceIp','deviceType','facility','dateFrom','dateTo'].forEach(k => {
+        if (params.get(k)) q[k] = params.get(k);
+    });
+    fetch('/api/saved-searches', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ name: name, queryJson: JSON.stringify(q), isShared: false })
+    }).then(r => { if (r.ok) window.location.reload(); });
+}
+
+async function deleteSavedSearch(id) {
+    if (!confirm('Remove this saved search?')) return;
+    await fetch('/api/saved-searches/' + id, { method: 'DELETE' });
+    window.location.reload();
+}
+</script>
+}

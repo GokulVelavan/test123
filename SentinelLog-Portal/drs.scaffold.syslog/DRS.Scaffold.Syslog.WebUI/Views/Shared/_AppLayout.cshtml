@@ -1,0 +1,72 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>@ViewData["Title"] - SentinelLog</title>
+    <link rel="stylesheet" href="~/css/fonts.css" asp-append-version="true">
+    <link rel="stylesheet" href="~/css/sentinel.css" asp-append-version="true">
+    @await RenderSectionAsync("Styles", required: false)
+    <script>
+        (function(){var c=localStorage.getItem('sentinelAccentColor');if(c)document.documentElement.style.setProperty('--accent-cyan',c);})();
+    </script>
+</head>
+<body class="app-body">
+
+    @* ?? SIDEBAR ???????????????????????????????????????????? *@
+    @await Html.PartialAsync("_AppShell")
+
+    @* ?? MAIN ??????????????????????????????????????????????? *@
+    <div class="main">
+
+        @* TOPBAR *@
+        <div class="topbar">
+            <div class="page-title">@(ViewData["Title"] ?? "SentinelLog")</div>
+            <div class="topbar-meta">@(ViewData["TopbarMeta"] ?? "")</div>
+            <div class="topbar-right">
+                <div class="status-pill" id="epsPill">
+                    <div class="pulse-dot"></div>
+                    LIVE
+                </div>
+                @if (ViewData["TopbarActions"] is not null)
+                {
+                    @Html.Raw(ViewData["TopbarActions"])
+                }
+            </div>
+        </div>
+
+        @* CONTENT *@
+        <div class="content">
+            @RenderBody()
+        </div>
+
+    </div>
+
+    <script src="~/js/sentinel.js" asp-append-version="true"></script>
+    <script>
+    // Global 401 interceptor — redirect to login when token expires mid-session
+    (function() {
+        var _fetch = window.fetch;
+        window.fetch = function() {
+            return _fetch.apply(this, arguments).then(function(r) {
+                if (r.status === 401) { window.location.replace('/'); }
+                return r;
+            });
+        };
+    })();
+    (function refreshEps() {
+        fetch('/api/logs/dashboard/summary')
+            .then(function(r) { return r.ok ? r.json() : null; })
+            .then(function(d) {
+                if (d) {
+                    var pill = document.getElementById('epsPill');
+                    if (pill) pill.lastChild.textContent = ' LIVE \u00b7 ' + parseFloat(d.currentEps ?? 0).toFixed(2) + ' EPS';
+                }
+            })
+            .catch(function() {});
+        setTimeout(refreshEps, 30000);
+    })();
+    </script>
+    @await RenderSectionAsync("Scripts", required: false)
+</body>
+</html>

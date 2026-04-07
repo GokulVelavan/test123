@@ -1,0 +1,451 @@
+@{
+    Layout = "_AppLayout";
+    ViewData["Title"] = "Settings &middot; Network";
+    ViewData["TopbarMeta"] = "Listener ports and protocol configuration";
+}
+@await Html.PartialAsync("_SettingsNav")
+<div style="padding:20px;display:flex;flex-direction:column;gap:16px">
+
+    <!-- Network Settings (#86-90) -->
+    <div class="panel">
+        <div class="panel-header">
+            <div class="panel-title">Syslog Listener</div>
+        </div>
+        <div style="padding:1.25rem 1.5rem;display:flex;flex-direction:column;gap:14px" id="networkForm">
+            <div id="networkAlert" class="alert-bar" style="display:none"></div>
+            <div class="form-row-2">
+                <div class="form-row">
+                    <label class="form-label">UDP Port</label>
+                    <input class="form-input" id="netUdpPort" type="number" min="1" max="65535" placeholder="514">
+                </div>
+                <div class="form-row">
+                    <label class="form-label">TCP Port</label>
+                    <input class="form-input" id="netTcpPort" type="number" min="1" max="65535" placeholder="514">
+                </div>
+            </div>
+            <div class="form-row-2">
+                <div class="form-row">
+                    <label class="form-label">TLS Port</label>
+                    <input class="form-input" id="netTlsPort" type="number" min="1" max="65535" placeholder="6514">
+                </div>
+                <div class="form-row">
+                    <label class="form-label">
+                        <input type="checkbox" id="netTlsEnabled" style="margin-right:6px">
+                        TLS Enabled
+                    </label>
+                </div>
+            </div>
+            <div class="form-row">
+                <label class="form-label">Allowed Subnets <span style="color:var(--text-muted);font-weight:400">(comma-separated CIDR, leave blank for any)</span></label>
+                <input class="form-input" id="netAllowedSubnets" placeholder="192.168.0.0/16, 10.0.0.0/8">
+            </div>
+            <div class="form-row">
+                <label class="form-label">Max Connections</label>
+                <input class="form-input" id="netMaxConnections" type="number" min="1" placeholder="1000" style="max-width:200px">
+            </div>
+            <div style="display:flex;gap:10px;margin-top:4px">
+                <button class="btn btn-accent btn-sm" id="netSaveBtn" onclick="saveNetworkSettings()">Save Settings</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Notification Delivery Settings (#86-90) -->
+    <div class="panel">
+        <div class="panel-header">
+            <div class="panel-title">Notification Delivery</div>
+        </div>
+        <div style="padding:1.25rem 1.5rem;display:flex;flex-direction:column;gap:14px">
+            <div id="notifAlert" class="alert-bar" style="display:none"></div>
+            <div class="form-row">
+                <label class="form-label">SMTP Host</label>
+                <input class="form-input" id="smtpHost" placeholder="smtp.example.com">
+            </div>
+            <div class="form-row-2">
+                <div class="form-row">
+                    <label class="form-label">SMTP Port</label>
+                    <input class="form-input" id="smtpPort" type="number" placeholder="587">
+                </div>
+                <div class="form-row">
+                    <label class="form-label">
+                        <input type="checkbox" id="smtpTls" style="margin-right:6px">
+                        STARTTLS / TLS
+                    </label>
+                </div>
+            </div>
+            <div class="form-row-2">
+                <div class="form-row">
+                    <label class="form-label">SMTP Username</label>
+                    <input class="form-input" id="smtpUser" autocomplete="off" placeholder="alerts@example.com">
+                </div>
+                <div class="form-row">
+                    <label class="form-label">SMTP Password</label>
+                    <input class="form-input" id="smtpPass" type="password" autocomplete="new-password" placeholder="••••••••">
+                </div>
+            </div>
+            <div class="form-row">
+                <label class="form-label">From Address</label>
+                <input class="form-input" id="smtpFrom" placeholder="noc@example.com">
+            </div>
+            <div style="display:flex;gap:10px;margin-top:4px">
+                <button class="btn btn-accent btn-sm" id="notifSaveBtn" onclick="saveNotifSettings()">Save Settings</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- LDAP Settings (#95) -->
+    <div class="panel">
+        <div class="panel-header">
+            <div class="panel-title">LDAP / Active Directory</div>
+        </div>
+        <div style="padding:1.25rem 1.5rem;display:flex;flex-direction:column;gap:14px">
+            <div id="ldapAlert" class="alert-bar" style="display:none"></div>
+            <div class="form-row">
+                <label class="form-label">LDAP Server</label>
+                <input class="form-input" id="ldapServer" placeholder="ldap://dc.example.com">
+            </div>
+            <div class="form-row-2">
+                <div class="form-row">
+                    <label class="form-label">Port</label>
+                    <input class="form-input" id="ldapPort" type="number" placeholder="389">
+                </div>
+                <div class="form-row">
+                    <label class="form-label">
+                        <input type="checkbox" id="ldapTls" style="margin-right:6px">
+                        Use LDAPS / TLS
+                    </label>
+                </div>
+            </div>
+            <div class="form-row">
+                <label class="form-label">Base DN</label>
+                <input class="form-input" id="ldapBaseDn" placeholder="DC=example,DC=com">
+            </div>
+            <div class="form-row-2">
+                <div class="form-row">
+                    <label class="form-label">Bind DN</label>
+                    <input class="form-input" id="ldapBindDn" placeholder="CN=svc-syslog,OU=ServiceAccounts,...">
+                </div>
+                <div class="form-row">
+                    <label class="form-label">Bind Password</label>
+                    <input class="form-input" id="ldapBindPass" type="password" autocomplete="new-password" placeholder="••••••••">
+                </div>
+            </div>
+            <div class="form-row">
+                <label class="form-label">User Attribute</label>
+                <input class="form-input" id="ldapUserAttr" placeholder="sAMAccountName" style="max-width:240px">
+            </div>
+            <div style="display:flex;gap:10px;margin-top:4px">
+                <button class="btn btn-accent btn-sm" id="ldapSaveBtn" onclick="saveLdapSettings()">Save Settings</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- Auth Policy (#96) -->
+    <div class="panel">
+        <div class="panel-header">
+            <div class="panel-title">Authentication Policy</div>
+        </div>
+        <div style="padding:1.25rem 1.5rem;display:flex;flex-direction:column;gap:14px">
+            <div id="authAlert" class="alert-bar" style="display:none"></div>
+            <div class="form-row-2">
+                <div class="form-row">
+                    <label class="form-label">Session Timeout (minutes)</label>
+                    <input class="form-input" id="authSessionTimeout" type="number" min="5" placeholder="60" style="max-width:160px">
+                </div>
+                <div class="form-row">
+                    <label class="form-label">Max Login Attempts</label>
+                    <input class="form-input" id="authMaxAttempts" type="number" min="1" placeholder="5" style="max-width:160px">
+                </div>
+            </div>
+            <div class="form-row-2">
+                <div class="form-row">
+                    <label class="form-label">Lockout Duration (minutes)</label>
+                    <input class="form-input" id="authLockoutMins" type="number" min="1" placeholder="15" style="max-width:160px">
+                </div>
+                <div class="form-row">
+                    <label class="form-label">
+                        <input type="checkbox" id="authMfaRequired" style="margin-right:6px">
+                        Require MFA for All Users
+                    </label>
+                </div>
+            </div>
+            <div class="form-row">
+                <label class="form-label">Min Password Length</label>
+                <input class="form-input" id="authMinPwdLen" type="number" min="6" placeholder="12" style="max-width:160px">
+            </div>
+            <div style="display:flex;gap:10px;margin-top:4px">
+                <button class="btn btn-accent btn-sm" id="authSaveBtn" onclick="saveAuthPolicy()">Save Settings</button>
+            </div>
+        </div>
+    </div>
+
+    <!-- SNMP Trap Forwarding (#81) -->
+    <div class="panel">
+        <div class="panel-header">
+            <div class="panel-title">SNMP Trap Forwarding</div>
+        </div>
+        <div style="padding:1.25rem 1.5rem;display:flex;flex-direction:column;gap:14px">
+            <div id="snmpAlert" class="alert-bar" style="display:none"></div>
+            <div class="form-row">
+                <label class="form-label">
+                    <input type="checkbox" id="snmpEnabled" style="margin-right:6px">
+                    Enable SNMP Trap Forwarding
+                </label>
+            </div>
+            <div class="form-row">
+                <label class="form-label">SNMP Host</label>
+                <input class="form-input" id="snmpHost" placeholder="192.168.1.100">
+            </div>
+            <div class="form-row-2">
+                <div class="form-row">
+                    <label class="form-label">Port</label>
+                    <input class="form-input" id="snmpPort" type="number" min="1" max="65535" placeholder="162">
+                </div>
+                <div class="form-row">
+                    <label class="form-label">Version</label>
+                    <select class="form-select" id="snmpVersion" onchange="onSnmpVersionChange()">
+                        <option value="v1">v1</option>
+                        <option value="v2c" selected>v2c</option>
+                        <option value="v3">v3</option>
+                    </select>
+                </div>
+            </div>
+            <div id="snmpCommunityRow" class="form-row">
+                <label class="form-label">Community String</label>
+                <input class="form-input" id="snmpCommunity" placeholder="public" style="max-width:240px">
+            </div>
+            <div id="snmpV3Fields" style="display:none;flex-direction:column;gap:14px">
+                <div class="form-row">
+                    <label class="form-label">Auth User</label>
+                    <input class="form-input" id="snmpAuthUser" autocomplete="off" placeholder="snmpuser">
+                </div>
+                <div class="form-row-2">
+                    <div class="form-row">
+                        <label class="form-label">Auth Password</label>
+                        <input class="form-input" id="snmpAuthPassword" type="password" autocomplete="new-password" placeholder="••••••••">
+                    </div>
+                    <div class="form-row">
+                        <label class="form-label">Priv Password</label>
+                        <input class="form-input" id="snmpPrivPassword" type="password" autocomplete="new-password" placeholder="••••••••">
+                    </div>
+                </div>
+            </div>
+            <div style="display:flex;gap:10px;margin-top:4px">
+                <button class="btn btn-accent btn-sm" id="snmpSaveBtn" onclick="saveSnmpSettings()">Save Settings</button>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+@section Scripts {
+<script>
+function showAlert(id, type, msg) {
+    var el = document.getElementById(id);
+    el.className = 'alert-bar ' + type;
+    el.textContent = msg;
+    el.style.display = 'flex';
+    setTimeout(() => { el.style.display = 'none'; }, 4000);
+}
+
+/* ── Network Settings ───────────────────────────────────── */
+async function loadNetworkSettings() {
+    try {
+        const r = await fetch('/api/settings/network');
+        if (!r.ok) return;
+        const d = await r.json();
+        document.getElementById('netUdpPort').value        = d.udpPort         ?? '';
+        document.getElementById('netTcpPort').value        = d.tcpPort         ?? '';
+        document.getElementById('netTlsPort').value        = d.tlsPort         ?? '';
+        document.getElementById('netTlsEnabled').checked   = !!d.tlsEnabled;
+        document.getElementById('netAllowedSubnets').value = d.allowedSubnets  ?? '';
+        document.getElementById('netMaxConnections').value = d.maxConnections  ?? '';
+    } catch {}
+}
+
+async function saveNetworkSettings() {
+    const btn = document.getElementById('netSaveBtn');
+    btn.disabled = true; btn.textContent = 'Saving…';
+    try {
+        const payload = {
+            udpPort:        parseInt(document.getElementById('netUdpPort').value) || null,
+            tcpPort:        parseInt(document.getElementById('netTcpPort').value) || null,
+            tlsPort:        parseInt(document.getElementById('netTlsPort').value) || null,
+            tlsEnabled:     document.getElementById('netTlsEnabled').checked,
+            allowedSubnets: document.getElementById('netAllowedSubnets').value.trim() || null,
+            maxConnections: parseInt(document.getElementById('netMaxConnections').value) || null
+        };
+        const r = await fetch('/api/settings/network', {
+            method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
+        });
+        if (r.ok) showAlert('networkAlert', 'success', 'Network settings saved.');
+        else showAlert('networkAlert', 'error', 'Failed to save network settings.');
+    } catch { showAlert('networkAlert', 'error', 'Network error.'); }
+    finally { btn.disabled = false; btn.textContent = 'Save Settings'; }
+}
+
+/* ── Notification Settings ──────────────────────────────── */
+async function loadNotifSettings() {
+    try {
+        const r = await fetch('/api/settings/notification-settings');
+        if (!r.ok) return;
+        const d = await r.json();
+        document.getElementById('smtpHost').value = d.smtpHost  ?? '';
+        document.getElementById('smtpPort').value = d.smtpPort  ?? '';
+        document.getElementById('smtpTls').checked = !!d.smtpTls;
+        document.getElementById('smtpUser').value = d.smtpUser  ?? '';
+        document.getElementById('smtpFrom').value = d.fromAddress ?? '';
+        // never pre-fill password
+    } catch {}
+}
+
+async function saveNotifSettings() {
+    const btn = document.getElementById('notifSaveBtn');
+    btn.disabled = true; btn.textContent = 'Saving…';
+    try {
+        const payload = {
+            smtpHost:    document.getElementById('smtpHost').value.trim() || null,
+            smtpPort:    parseInt(document.getElementById('smtpPort').value) || null,
+            smtpTls:     document.getElementById('smtpTls').checked,
+            smtpUser:    document.getElementById('smtpUser').value.trim() || null,
+            smtpPass:    document.getElementById('smtpPass').value || null,
+            fromAddress: document.getElementById('smtpFrom').value.trim() || null
+        };
+        const r = await fetch('/api/settings/notification-settings', {
+            method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
+        });
+        if (r.ok) showAlert('notifAlert', 'success', 'Notification settings saved.');
+        else showAlert('notifAlert', 'error', 'Failed to save notification settings.');
+    } catch { showAlert('notifAlert', 'error', 'Network error.'); }
+    finally { btn.disabled = false; btn.textContent = 'Save Settings'; }
+}
+
+/* ── LDAP Settings ──────────────────────────────────────── */
+async function loadLdapSettings() {
+    try {
+        const r = await fetch('/api/settings/ldap');
+        if (!r.ok) return;
+        const d = await r.json();
+        document.getElementById('ldapServer').value   = d.server     ?? '';
+        document.getElementById('ldapPort').value     = d.port       ?? '';
+        document.getElementById('ldapTls').checked    = !!d.useTls;
+        document.getElementById('ldapBaseDn').value   = d.baseDn     ?? '';
+        document.getElementById('ldapBindDn').value   = d.bindDn     ?? '';
+        document.getElementById('ldapUserAttr').value = d.userAttr   ?? '';
+    } catch {}
+}
+
+async function saveLdapSettings() {
+    const btn = document.getElementById('ldapSaveBtn');
+    btn.disabled = true; btn.textContent = 'Saving…';
+    try {
+        const payload = {
+            server:   document.getElementById('ldapServer').value.trim()   || null,
+            port:     parseInt(document.getElementById('ldapPort').value)   || null,
+            useTls:   document.getElementById('ldapTls').checked,
+            baseDn:   document.getElementById('ldapBaseDn').value.trim()   || null,
+            bindDn:   document.getElementById('ldapBindDn').value.trim()   || null,
+            bindPass: document.getElementById('ldapBindPass').value        || null,
+            userAttr: document.getElementById('ldapUserAttr').value.trim() || null
+        };
+        const r = await fetch('/api/settings/ldap', {
+            method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
+        });
+        if (r.ok) showAlert('ldapAlert', 'success', 'LDAP settings saved.');
+        else showAlert('ldapAlert', 'error', 'Failed to save LDAP settings.');
+    } catch { showAlert('ldapAlert', 'error', 'Network error.'); }
+    finally { btn.disabled = false; btn.textContent = 'Save Settings'; }
+}
+
+/* ── Auth Policy ────────────────────────────────────────── */
+async function loadAuthPolicy() {
+    try {
+        const r = await fetch('/api/settings/auth-policy');
+        if (!r.ok) return;
+        const d = await r.json();
+        document.getElementById('authSessionTimeout').value = d.sessionTimeoutMinutes ?? '';
+        document.getElementById('authMaxAttempts').value    = d.maxLoginAttempts      ?? '';
+        document.getElementById('authLockoutMins').value    = d.lockoutDurationMinutes ?? '';
+        document.getElementById('authMfaRequired').checked  = !!d.mfaRequired;
+        document.getElementById('authMinPwdLen').value      = d.minPasswordLength     ?? '';
+    } catch {}
+}
+
+async function saveAuthPolicy() {
+    const btn = document.getElementById('authSaveBtn');
+    btn.disabled = true; btn.textContent = 'Saving…';
+    try {
+        const payload = {
+            sessionTimeoutMinutes:  parseInt(document.getElementById('authSessionTimeout').value) || null,
+            maxLoginAttempts:       parseInt(document.getElementById('authMaxAttempts').value)    || null,
+            lockoutDurationMinutes: parseInt(document.getElementById('authLockoutMins').value)    || null,
+            mfaRequired:            document.getElementById('authMfaRequired').checked,
+            minPasswordLength:      parseInt(document.getElementById('authMinPwdLen').value)      || null
+        };
+        const r = await fetch('/api/settings/auth-policy', {
+            method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
+        });
+        if (r.ok) showAlert('authAlert', 'success', 'Auth policy saved.');
+        else showAlert('authAlert', 'error', 'Failed to save auth policy.');
+    } catch { showAlert('authAlert', 'error', 'Network error.'); }
+    finally { btn.disabled = false; btn.textContent = 'Save Settings'; }
+}
+
+/* ── SNMP Settings ──────────────────────────────────────── */
+function onSnmpVersionChange() {
+    var ver = document.getElementById('snmpVersion').value;
+    var communityRow = document.getElementById('snmpCommunityRow');
+    var v3Fields     = document.getElementById('snmpV3Fields');
+    if (ver === 'v3') {
+        communityRow.style.display = 'none';
+        v3Fields.style.display     = 'flex';
+    } else {
+        communityRow.style.display = '';
+        v3Fields.style.display     = 'none';
+    }
+}
+
+async function loadSnmpSettings() {
+    try {
+        const r = await fetch('/api/settings/snmp');
+        if (!r.ok) return;
+        const d = await r.json();
+        document.getElementById('snmpEnabled').checked   = !!d.enabled;
+        document.getElementById('snmpHost').value        = d.host         ?? '';
+        document.getElementById('snmpPort').value        = d.port         ?? '';
+        document.getElementById('snmpVersion').value     = d.version      ?? 'v2c';
+        document.getElementById('snmpCommunity').value   = d.community    ?? '';
+        document.getElementById('snmpAuthUser').value    = d.authUser     ?? '';
+        onSnmpVersionChange();
+    } catch {}
+}
+
+async function saveSnmpSettings() {
+    const btn = document.getElementById('snmpSaveBtn');
+    btn.disabled = true; btn.textContent = 'Saving\u2026';
+    try {
+        const payload = {
+            enabled:      document.getElementById('snmpEnabled').checked,
+            host:         document.getElementById('snmpHost').value.trim()      || null,
+            port:         parseInt(document.getElementById('snmpPort').value)   || null,
+            version:      document.getElementById('snmpVersion').value,
+            community:    document.getElementById('snmpCommunity').value.trim() || null,
+            authUser:     document.getElementById('snmpAuthUser').value.trim()  || null,
+            authPassword: document.getElementById('snmpAuthPassword').value     || null,
+            privPassword: document.getElementById('snmpPrivPassword').value     || null
+        };
+        const r = await fetch('/api/settings/snmp', {
+            method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
+        });
+        if (r.ok) showAlert('snmpAlert', 'success', 'SNMP settings saved.');
+        else showAlert('snmpAlert', 'error', 'Failed to save SNMP settings.');
+    } catch { showAlert('snmpAlert', 'error', 'Network error.'); }
+    finally { btn.disabled = false; btn.textContent = 'Save Settings'; }
+}
+
+loadNetworkSettings();
+loadNotifSettings();
+loadLdapSettings();
+loadAuthPolicy();
+loadSnmpSettings();
+</script>
+}

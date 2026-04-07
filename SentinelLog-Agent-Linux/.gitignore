@@ -1,0 +1,25 @@
+# Build output
+bin/
+obj/
+publish/
+publish2/
+
+# IDE
+.vs/
+.vscode/
+*.user
+*.suo
+
+# Runtime state
+offsets.json
+
+# OS
+Thumbs.db
+Desktop.ini
+.DS_Store
+
+# Test artifacts
+*.txt
+!README.md
+!SETUP.md
+!LICENSE.txt

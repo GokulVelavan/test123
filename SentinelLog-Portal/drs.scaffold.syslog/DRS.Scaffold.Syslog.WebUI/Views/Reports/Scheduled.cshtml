@@ -1,0 +1,186 @@
+@{
+    Layout = "_AppLayout";
+    ViewData["Title"] = "Reports — Scheduled";
+    ViewData["TopbarMeta"] = "Scheduled report management";
+}
+
+<!-- Create Report Modal -->
+<div class="modal-overlay hidden" id="createReportModal">
+    <div class="modal-box" style="max-width:460px">
+        <div class="modal-header">
+            <div class="modal-title">+ Create Scheduled Report</div>
+            <button class="modal-close" onclick="closeCreateReportModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <div id="createReportError" class="alert-bar error" style="display:none"><span>&#x26A0;</span> <span id="createReportErrorMsg"></span></div>
+            <div class="form-row">
+                <label class="form-label">Report Name *</label>
+                <input class="form-input" id="repName" placeholder="e.g. Weekly Security Summary">
+            </div>
+            <div class="form-row">
+                <label class="form-label">Description</label>
+                <input class="form-input" id="repDesc" placeholder="Optional description">
+            </div>
+            <div class="form-row">
+                <label class="form-label">Schedule <span style="color:var(--text-muted);font-weight:400">(cron expression)</span></label>
+                <select class="form-select" id="repSchedulePreset" onchange="onSchedulePreset()">
+                    <option value="">— Select preset —</option>
+                    <option value="0 8 * * 1">Every Monday at 08:00</option>
+                    <option value="0 8 * * *">Every day at 08:00</option>
+                    <option value="0 0 1 * *">First of each month</option>
+                    <option value="custom">Custom cron…</option>
+                </select>
+                <input class="form-input" id="repSchedule" placeholder="0 8 * * 1" style="margin-top:6px" oninput="document.getElementById('repSchedulePreset').value='custom'">
+            </div>
+            <div class="form-row">
+                <label class="form-label">Format</label>
+                <select class="form-select" id="repFormat">
+                    <option value="csv">CSV</option>
+                    <option value="json">JSON</option>
+                    <option value="pdf" disabled title="PDF export is not yet supported">PDF (coming soon)</option>
+                </select>
+            </div>
+            <div class="form-row">
+                <label class="form-label" style="display:flex;align-items:center;gap:8px;cursor:pointer">
+                    <input type="checkbox" id="repEnabled" checked>
+                    <span>Enabled</span>
+                </label>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-ghost btn-sm" onclick="closeCreateReportModal()">Cancel</button>
+            <button class="btn btn-accent btn-sm" id="createReportBtn" onclick="submitCreateReport()">Create</button>
+        </div>
+    </div>
+</div>
+
+@await Html.PartialAsync("_ReportsNav")
+<div style="padding:20px">
+    <div class="panel">
+        <div class="panel-header">
+            <div class="panel-title">Scheduled Reports</div>
+            <div class="panel-controls">
+                <button class="btn btn-accent btn-sm" onclick="openCreateReportModal()">+ Create Report</button>
+            </div>
+        </div>
+        <div id="reportsTable">
+            <div style="padding:1.5rem;color:var(--text-muted)">Loading&hellip;</div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+function esc(s) { var d = document.createElement('div'); d.textContent = String(s ?? ''); return d.innerHTML; }
+function relTime(iso) {
+    if (!iso) return 'Never';
+    var diff = Math.floor((Date.now() - new Date(iso)) / 1000);
+    if (diff < 60) return diff + 's ago';
+    if (diff < 3600) return Math.floor(diff/60) + 'm ago';
+    if (diff < 86400) return Math.floor(diff/3600) + 'h ago';
+    return Math.floor(diff/86400) + 'd ago';
+}
+
+async function loadReports() {
+    try {
+        const r = await fetch('/api/reports');
+        if (!r.ok) { document.getElementById('reportsTable').innerHTML = '<div style="padding:1.5rem;color:var(--sev-error)">Failed to load reports.</div>'; return; }
+        const items = await r.json();
+        if (!items.length) { document.getElementById('reportsTable').innerHTML = '<div style="padding:1.5rem;color:var(--text-muted)">No scheduled reports. Create one to automate report delivery.</div>'; return; }
+        const rows = items.map(rep => `
+            <tr>
+                <td>
+                    <div style="font-weight:500">${esc(rep.name)}</div>
+                    ${rep.description ? '<div style="font-size:11px;color:var(--text-muted)">' + esc(rep.description) + '</div>' : ''}
+                </td>
+                <td class="mono" style="color:var(--text-muted);font-size:12px">${esc(rep.schedule ?? '—')}</td>
+                <td><span class="sev-badge info">${esc(rep.format.toUpperCase())}</span></td>
+                <td>
+                    <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+                        <input type="checkbox" ${rep.enabled ? 'checked' : ''} onchange="toggleReport(${rep.id}, this.checked)">
+                        <span style="font-size:12px">${rep.enabled ? '<span style="color:var(--sev-notice)">Active</span>' : '<span style="color:var(--text-muted)">Paused</span>'}</span>
+                    </label>
+                </td>
+                <td class="mono" style="color:var(--text-muted);font-size:12px">${relTime(rep.lastRunAt)}</td>
+                <td style="text-align:right;display:flex;gap:6px;justify-content:flex-end">
+                    <button class="btn btn-sm" style="color:var(--accent-cyan);background:transparent;border:1px solid var(--accent-cyan)" onclick="runReport(${rep.id})">Run</button>
+                    <button class="btn btn-sm" style="color:var(--sev-error);background:transparent;border:1px solid var(--sev-error)" onclick="deleteReport(${rep.id}, ${JSON.stringify(rep.name)})">Delete</button>
+                </td>
+            </tr>`).join('');
+        document.getElementById('reportsTable').innerHTML = `
+            <table class="data-table">
+                <thead><tr><th>Name</th><th>Schedule</th><th>Format</th><th>Status</th><th>Last Run</th><th style="text-align:right">Actions</th></tr></thead>
+                <tbody>${rows}</tbody>
+            </table>`;
+    } catch { document.getElementById('reportsTable').innerHTML = '<div style="padding:1.5rem;color:var(--sev-error)">Network error.</div>'; }
+}
+
+function onSchedulePreset() {
+    var preset = document.getElementById('repSchedulePreset').value;
+    if (preset && preset !== 'custom') document.getElementById('repSchedule').value = preset;
+}
+
+function openCreateReportModal() {
+    document.getElementById('createReportError').style.display = 'none';
+    document.getElementById('repName').value = '';
+    document.getElementById('repDesc').value = '';
+    document.getElementById('repSchedulePreset').value = '';
+    document.getElementById('repSchedule').value = '';
+    document.getElementById('repFormat').value = 'csv';
+    document.getElementById('repEnabled').checked = true;
+    document.getElementById('createReportModal').classList.remove('hidden');
+    document.getElementById('repName').focus();
+}
+
+function closeCreateReportModal() { document.getElementById('createReportModal').classList.add('hidden'); }
+
+async function submitCreateReport() {
+    const name = document.getElementById('repName').value.trim();
+    if (!name) { document.getElementById('createReportErrorMsg').textContent = 'Name is required.'; document.getElementById('createReportError').style.display = 'flex'; return; }
+    const btn = document.getElementById('createReportBtn');
+    btn.disabled = true; btn.textContent = 'Creating\u2026';
+    try {
+        const r = await fetch('/api/reports', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({
+                name, description: document.getElementById('repDesc').value.trim() || null,
+                schedule: document.getElementById('repSchedule').value.trim() || null,
+                format: document.getElementById('repFormat').value,
+                enabled: document.getElementById('repEnabled').checked
+            })
+        });
+        if (!r.ok) { const t = await r.text(); document.getElementById('createReportErrorMsg').textContent = t || 'Failed.'; document.getElementById('createReportError').style.display = 'flex'; return; }
+        closeCreateReportModal();
+        loadReports();
+    } catch { document.getElementById('createReportErrorMsg').textContent = 'Network error.'; document.getElementById('createReportError').style.display = 'flex'; }
+    finally { btn.disabled = false; btn.textContent = 'Create'; }
+}
+
+async function toggleReport(id, enabled) {
+    try { await fetch('/api/reports/' + id + '/toggle?enabled=' + enabled, { method: 'PATCH' }); loadReports(); } catch {}
+}
+
+async function deleteReport(id, name) {
+    if (!confirm('Delete report "' + name + '"?')) return;
+    try {
+        const r = await fetch('/api/reports/' + id, { method: 'DELETE' });
+        if (!r.ok) { alert('Failed to delete report.'); return; }
+        loadReports();
+    } catch { alert('Network error.'); }
+}
+
+async function runReport(id) {
+    const r = await fetch('/api/reports/' + id + '/run');
+    if (!r.ok) { alert('Report run failed (HTTP ' + r.status + ')'); return; }
+    const blob = await r.blob();
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url; a.download = 'report-' + id + '.csv';
+    document.body.appendChild(a); a.click();
+    document.body.removeChild(a); URL.revokeObjectURL(url);
+}
+
+document.getElementById('createReportModal').addEventListener('click', function(e) { if (e.target === this) closeCreateReportModal(); });
+loadReports();
+</script>
+}

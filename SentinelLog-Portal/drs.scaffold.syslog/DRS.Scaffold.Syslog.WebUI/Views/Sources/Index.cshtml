@@ -1,0 +1,563 @@
+@{
+    Layout = "_AppLayout";
+    ViewData["Title"] = "Sources — Inventory";
+    ViewData["TopbarMeta"] = "Device and source inventory";
+}
+
+<!-- Add Source Modal -->
+<div class="modal-overlay hidden" id="addSourceModal">
+    <div class="modal-box">
+        <div class="modal-header">
+            <div class="modal-title">+ Add Log Source</div>
+            <button class="modal-close" onclick="closeAddSourceModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <div id="sourceModalError" class="alert-bar error" style="display:none"><span>&#x26A0;</span> <span id="sourceModalErrorMsg"></span></div>
+            <div class="form-row">
+                <label class="form-label">Source Name *</label>
+                <input class="form-input" id="srcNameInput" placeholder="e.g. Core-Firewall-01">
+            </div>
+            <div class="form-row-2">
+                <div class="form-row">
+                    <label class="form-label">IP Address *</label>
+                    <input class="form-input" id="srcIpInput" placeholder="192.168.1.1">
+                </div>
+                <div class="form-row">
+                    <label class="form-label">Device Type</label>
+                    <select class="form-select" id="srcDeviceTypeInput">
+                        <option value="">— Select —</option>
+                        <option value="Firewall">Firewall</option>
+                        <option value="Router">Router</option>
+                        <option value="Switch">Switch</option>
+                        <option value="Linux">Linux</option>
+                        <option value="Windows">Windows</option>
+                        <option value="IDS/IPS">IDS/IPS</option>
+                        <option value="Other">Other</option>
+                    </select>
+                </div>
+            </div>
+            <div class="form-row-2">
+                <div class="form-row">
+                    <label class="form-label">OS Type</label>
+                    <input class="form-input" id="srcOsTypeInput" placeholder="e.g. Cisco IOS, Ubuntu 22.04">
+                </div>
+                <div class="form-row">
+                    <label class="form-label">Location</label>
+                    <input class="form-input" id="srcLocationInput" placeholder="e.g. DC1-Rack-A4">
+                </div>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-ghost btn-sm" onclick="closeAddSourceModal()">Cancel</button>
+            <button class="btn btn-accent btn-sm" id="sourceSubmitBtn" onclick="submitAddSource()">Add Source</button>
+        </div>
+    </div>
+</div>
+
+<!-- Edit Source Modal -->
+<div class="modal-overlay hidden" id="editSourceModal">
+    <div class="modal-box">
+        <div class="modal-header">
+            <div class="modal-title">Edit Log Source</div>
+            <button class="modal-close" onclick="closeEditSourceModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <div id="editSourceModalError" class="alert-bar error" style="display:none"><span>&#x26A0;</span> <span id="editSourceModalErrorMsg"></span></div>
+            <div class="form-row">
+                <label class="form-label">Source Name *</label>
+                <input class="form-input" id="editSrcNameInput" placeholder="e.g. Core-Firewall-01">
+            </div>
+            <div class="form-row-2">
+                <div class="form-row">
+                    <label class="form-label">IP Address *</label>
+                    <input class="form-input" id="editSrcIpInput" placeholder="192.168.1.1">
+                </div>
+                <div class="form-row">
+                    <label class="form-label">Device Type</label>
+                    <select class="form-select" id="editSrcDeviceTypeInput">
+                        <option value="">— Select —</option>
+                        <option value="Firewall">Firewall</option>
+                        <option value="Router">Router</option>
+                        <option value="Switch">Switch</option>
+                        <option value="Linux">Linux</option>
+                        <option value="Windows">Windows</option>
+                        <option value="IDS/IPS">IDS/IPS</option>
+                        <option value="Other">Other</option>
+                    </select>
+                </div>
+            </div>
+            <div class="form-row-2">
+                <div class="form-row">
+                    <label class="form-label">OS Type</label>
+                    <input class="form-input" id="editSrcOsTypeInput" placeholder="e.g. Cisco IOS, Ubuntu 22.04">
+                </div>
+                <div class="form-row">
+                    <label class="form-label">Location</label>
+                    <input class="form-input" id="editSrcLocationInput" placeholder="e.g. DC1-Rack-A4">
+                </div>
+            </div>
+            <div class="form-row">
+                <label class="form-label">Status</label>
+                <select class="form-select" id="editSrcStatusInput">
+                    <option value="Online">Online</option>
+                    <option value="Offline">Offline</option>
+                    <option value="Degraded">Degraded</option>
+                    <option value="Pending">Pending</option>
+                </select>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-ghost btn-sm" onclick="closeEditSourceModal()">Cancel</button>
+            <button class="btn btn-accent btn-sm" id="editSourceSubmitBtn" onclick="submitEditSource()">Save Changes</button>
+        </div>
+    </div>
+</div>
+
+<!-- Activity Chart Modal (#18/#22/#23) -->
+<div class="modal-overlay hidden" id="activityModal">
+    <div class="modal-box" style="max-width:700px">
+        <div class="modal-header">
+            <div class="modal-title" id="activityModalTitle">Source Activity</div>
+            <button class="modal-close" onclick="closeActivityModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <canvas id="activityChart" height="120"></canvas>
+        </div>
+    </div>
+</div>
+
+@await Html.PartialAsync("_SourcesNav")
+<!-- Summary KPIs -->
+<div style="padding:20px;display:flex;flex-direction:column;gap:16px">
+    <div class="metrics-row" style="grid-template-columns:repeat(5,1fr)">
+        <div class="metric-card cyan">
+            <div class="metric-label">Total</div>
+            <div class="metric-value" id="kpiTotal">&mdash;</div>
+        </div>
+        <div class="metric-card green">
+            <div class="metric-label">Online</div>
+            <div class="metric-value" id="kpiOnline">&mdash;</div>
+        </div>
+        <div class="metric-card red">
+            <div class="metric-label">Offline</div>
+            <div class="metric-value" id="kpiOffline">&mdash;</div>
+        </div>
+        <div class="metric-card yellow">
+            <div class="metric-label">Degraded</div>
+            <div class="metric-value" id="kpiDegraded">&mdash;</div>
+        </div>
+        <div class="metric-card blue">
+            <div class="metric-label">Pending</div>
+            <div class="metric-value" id="kpiPending">&mdash;</div>
+        </div>
+    </div>
+
+    <div class="panel">
+        <div class="panel-header">
+            <div class="panel-title">Source Inventory</div>
+            <div class="panel-controls">
+                <input class="log-search-input" id="srcSearchInput" placeholder="Search name, IP…" oninput="debounceSearch()" style="width:160px">
+                <select class="select-sm" id="srcStatusFilter" onchange="resetAndLoad()">
+                    <option value="">All Status</option>
+                    <option value="Online">Online</option>
+                    <option value="Offline">Offline</option>
+                    <option value="Degraded">Degraded</option>
+                    <option value="Pending">Pending</option>
+                </select>
+                <select class="select-sm" id="srcTypeFilter" onchange="resetAndLoad()">
+                    <option value="">All Types</option>
+                    <option value="Firewall">Firewall</option>
+                    <option value="Router">Router</option>
+                    <option value="Switch">Switch</option>
+                    <option value="Linux">Linux</option>
+                    <option value="Windows">Windows</option>
+                    <option value="IDS/IPS">IDS/IPS</option>
+                    <option value="Other">Other</option>
+                </select>
+                <button class="btn btn-accent btn-sm" onclick="openAddSourceModal()">+ Add Source</button>
+            </div>
+        </div>
+        <!-- #72 Bulk action bar -->
+        <div id="bulkBar" style="display:none;padding:8px 16px;background:var(--panel-bg);border-bottom:1px solid var(--border);align-items:center;gap:10px">
+            <span id="bulkCount" style="color:var(--text-muted);font-size:13px"></span>
+            <select class="select-sm" id="bulkStatusSelect">
+                <option value="Online">Set Online</option>
+                <option value="Offline">Set Offline</option>
+                <option value="Degraded">Set Degraded</option>
+                <option value="Pending">Set Pending</option>
+            </select>
+            <button class="btn btn-sm" style="border:1px solid var(--accent-cyan);color:var(--accent-cyan)" onclick="bulkSetStatus()">Apply Status</button>
+            <button class="btn btn-sm" style="border:1px solid var(--sev-error);color:var(--sev-error)" onclick="bulkDelete()">Delete Selected</button>
+            <button class="btn btn-ghost btn-sm" onclick="clearSelection()">Clear</button>
+        </div>
+        <div id="sourcesTable" class="table-wrap">
+            <div style="padding:1.5rem;color:var(--text-muted)">Loading&hellip;</div>
+        </div>
+        <div id="srcPagination" class="pagination" style="display:none">
+            <button class="page-btn" id="srcPrevBtn" onclick="srcChangePage(-1)">&larr; Prev</button>
+            <span class="page-info" id="srcPageInfo">Page 1</span>
+            <button class="page-btn" id="srcNextBtn" onclick="srcChangePage(1)">Next &rarr;</button>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+/* ── state ─────────────────────────────────────────────── */
+var srcPage       = 1;
+var srcPageSize   = 20;
+var srcTotalPages = 1;
+var srcDebTimer   = null;
+
+/* ── helpers ────────────────────────────────────────────── */
+function esc(s) { var d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+function relTime(iso) {
+    if (!iso) return '—';
+    var diff = Math.floor((Date.now() - new Date(iso)) / 1000);
+    if (diff < 60)   return diff + 's ago';
+    if (diff < 3600) return Math.floor(diff / 60) + 'm ago';
+    if (diff < 86400) return Math.floor(diff / 3600) + 'h ago';
+    return Math.floor(diff / 86400) + 'd ago';
+}
+
+/* ── load with filters + pagination ────────────────────── */
+async function loadSources() {
+    var search = document.getElementById('srcSearchInput').value.trim();
+    var status = document.getElementById('srcStatusFilter').value;
+    var type   = document.getElementById('srcTypeFilter').value;
+
+    var qs = '/api/sources?page=' + srcPage + '&pageSize=' + srcPageSize;
+    if (search) qs += '&search=' + encodeURIComponent(search);
+    if (status) qs += '&status=' + encodeURIComponent(status);
+    if (type)   qs += '&deviceType=' + encodeURIComponent(type);
+
+    try {
+        const [sumRes, srcRes] = await Promise.all([
+            fetch('/api/sources/summary'),
+            fetch(qs)
+        ]);
+
+        if (sumRes.ok) {
+            const s = await sumRes.json();
+            document.getElementById('kpiTotal').textContent    = s.totalSources  ?? '—';
+            document.getElementById('kpiOnline').textContent   = s.onlineCount   ?? '—';
+            document.getElementById('kpiOffline').textContent  = s.offlineCount  ?? '—';
+            document.getElementById('kpiDegraded').textContent = s.degradedCount ?? '—';
+            document.getElementById('kpiPending').textContent  = s.pendingCount  ?? '—';
+        }
+
+        if (srcRes.ok) {
+            const d = await srcRes.json();
+            const items = d.items ?? [];
+            srcTotalPages = (d.totalPages ?? Math.ceil((d.totalCount ?? items.length) / srcPageSize)) || 1;
+
+            const rows = items.map(s => `
+                <tr class="src-row" data-id="${esc(String(s.id ?? ''))}"
+                    data-name="${esc(s.name ?? '')}"
+                    data-ip="${esc(s.ipAddress ?? '')}"
+                    data-dtype="${esc(s.deviceType ?? '')}"
+                    data-ostype="${esc(s.osType ?? '')}"
+                    data-location="${esc(s.location ?? '')}"
+                    data-status="${esc(s.status ?? '')}">
+                    <td style="width:36px;text-align:center"><input type="checkbox" class="src-chk" data-id="${esc(String(s.id ?? ''))}" onchange="onCheckChange()"></td>
+                    <td>${esc(s.name ?? '')}</td>
+                    <td class="mono" style="color:var(--accent-cyan)">${esc(s.ipAddress ?? '—')}</td>
+                    <td>${esc(s.deviceType ?? '—')}</td>
+                    <td style="color:var(--text-muted);font-size:11px">${esc(s.location ?? '—')}</td>
+                    <td><span class="sev-badge ${(s.status ?? 'unknown').toLowerCase()}">${esc(s.status ?? 'Unknown')}</span></td>
+                    <td class="mono" style="color:var(--text-muted)" title="${s.lastSeen ? new Date(s.lastSeen).toLocaleString() : ''}">${relTime(s.lastSeen)}</td>
+                    <td class="mono" style="color:var(--accent-cyan);text-align:right">${s.currentEps ?? 0} <span style="color:var(--text-muted);font-size:10px">eps</span></td>
+                    <td class="src-actions">
+                        <button class="btn btn-ghost btn-sm" data-sid="${esc(String(s.id ?? ''))}" data-sname="${esc(s.name ?? '')}" onclick="openActivityModal(parseInt(this.dataset.sid), this.dataset.sname)">Activity</button>
+                        <button class="btn btn-ghost btn-sm" onclick="openEditSourceModal(this.closest('tr'))">Edit</button>
+                        <button class="btn btn-sm" style="color:var(--sev-error);background:transparent;border:1px solid var(--sev-error)" onclick="deleteSource(this.closest('tr'))">Delete</button>
+                    </td>
+                </tr>`).join('');
+
+            document.getElementById('sourcesTable').innerHTML = rows.length
+                ? `<table class="data-table"><thead><tr>
+                       <th style="width:36px"><input type="checkbox" id="chkAll" onchange="toggleAll(this.checked)"></th>
+                       <th>Name</th><th>IP</th><th>Type</th><th>Location</th>
+                       <th>Status</th><th>Last Seen</th><th style="text-align:right">EPS</th>
+                       <th style="width:180px">Actions</th>
+                   </tr></thead><tbody>${rows}</tbody></table>`
+                : '<div style="padding:1.5rem;color:var(--text-muted)">No sources found.</div>';
+
+            // pagination
+            var pg = document.getElementById('srcPagination');
+            if (srcTotalPages > 1) {
+                document.getElementById('srcPageInfo').textContent = 'Page ' + srcPage + ' of ' + srcTotalPages;
+                document.getElementById('srcPrevBtn').disabled = srcPage <= 1;
+                document.getElementById('srcNextBtn').disabled = srcPage >= srcTotalPages;
+                pg.style.display = 'flex';
+            } else {
+                pg.style.display = 'none';
+            }
+        } else {
+            document.getElementById('sourcesTable').innerHTML =
+                '<div style="padding:1.5rem;color:var(--sev-error)">&#x26A0; Failed to load sources (' + srcRes.status + '). Check that the API is running and you are logged in.</div>';
+        }
+    } catch (err) {
+        document.getElementById('sourcesTable').innerHTML =
+            '<div style="padding:1.5rem;color:var(--sev-error)">&#x26A0; Failed to load sources: ' + err.message + '</div>';
+    }
+}
+
+function resetAndLoad() {
+    srcPage = 1;
+    loadSources();
+}
+
+function debounceSearch() {
+    clearTimeout(srcDebTimer);
+    srcDebTimer = setTimeout(resetAndLoad, 300);
+}
+
+function srcChangePage(delta) {
+    var next = srcPage + delta;
+    if (next < 1 || next > srcTotalPages) return;
+    srcPage = next;
+    loadSources();
+}
+
+loadSources();
+
+/* ── Add Source modal ───────────────────────────────────── */
+function openAddSourceModal() {
+    document.getElementById('addSourceModal').classList.remove('hidden');
+    document.getElementById('srcNameInput').focus();
+}
+
+function closeAddSourceModal() {
+    document.getElementById('addSourceModal').classList.add('hidden');
+    document.getElementById('sourceModalError').style.display = 'none';
+    ['srcNameInput','srcIpInput','srcOsTypeInput','srcLocationInput'].forEach(id => {
+        const el = document.getElementById(id); if (el) el.value = '';
+    });
+    document.getElementById('srcDeviceTypeInput').value = '';
+}
+
+async function submitAddSource() {
+    const name = document.getElementById('srcNameInput').value.trim();
+    const ip   = document.getElementById('srcIpInput').value.trim();
+    if (!name) { showSourceError('Source Name is required.'); return; }
+    if (!ip)   { showSourceError('IP Address is required.'); return; }
+    const btn = document.getElementById('sourceSubmitBtn');
+    btn.disabled = true; btn.textContent = 'Adding…';
+    try {
+        const payload = {
+            name,
+            ipAddress:  ip,
+            deviceType: document.getElementById('srcDeviceTypeInput').value || null,
+            osType:     document.getElementById('srcOsTypeInput').value.trim() || null,
+            location:   document.getElementById('srcLocationInput').value.trim() || null,
+            status:     'Pending'
+        };
+        const r = await fetch('/api/sources', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        if (!r.ok) { const t = await r.text(); showSourceError(t || 'Failed to add source.'); return; }
+        closeAddSourceModal();
+        resetAndLoad();
+    } catch { showSourceError('Network error.'); }
+    finally { btn.disabled = false; btn.textContent = 'Add Source'; }
+}
+
+function showSourceError(msg) {
+    const bar = document.getElementById('sourceModalError');
+    document.getElementById('sourceModalErrorMsg').textContent = msg;
+    bar.style.display = 'flex';
+}
+
+document.getElementById('addSourceModal').addEventListener('click', function(e) { if (e.target === this) closeAddSourceModal(); });
+
+/* ── Edit Source modal ──────────────────────────────────── */
+var editSourceId = null;
+
+function openEditSourceModal(tr) {
+    editSourceId = tr.dataset.id;
+    document.getElementById('editSrcNameInput').value       = tr.dataset.name     || '';
+    document.getElementById('editSrcIpInput').value         = tr.dataset.ip       || '';
+    document.getElementById('editSrcDeviceTypeInput').value = tr.dataset.dtype    || '';
+    document.getElementById('editSrcOsTypeInput').value     = tr.dataset.ostype   || '';
+    document.getElementById('editSrcLocationInput').value   = tr.dataset.location || '';
+    document.getElementById('editSrcStatusInput').value     = tr.dataset.status   || 'Pending';
+    document.getElementById('editSourceModalError').style.display = 'none';
+    document.getElementById('editSourceModal').classList.remove('hidden');
+    document.getElementById('editSrcNameInput').focus();
+}
+
+function closeEditSourceModal() {
+    document.getElementById('editSourceModal').classList.add('hidden');
+    editSourceId = null;
+}
+
+async function submitEditSource() {
+    if (!editSourceId) return;
+    const name = document.getElementById('editSrcNameInput').value.trim();
+    const ip   = document.getElementById('editSrcIpInput').value.trim();
+    if (!name) { showEditError('Source Name is required.'); return; }
+    if (!ip)   { showEditError('IP Address is required.'); return; }
+    const btn = document.getElementById('editSourceSubmitBtn');
+    btn.disabled = true; btn.textContent = 'Saving…';
+    try {
+        const payload = {
+            name,
+            ipAddress:  ip,
+            deviceType: document.getElementById('editSrcDeviceTypeInput').value || null,
+            osType:     document.getElementById('editSrcOsTypeInput').value.trim() || null,
+            location:   document.getElementById('editSrcLocationInput').value.trim() || null,
+            status:     document.getElementById('editSrcStatusInput').value || 'Pending'
+        };
+        const r = await fetch('/api/sources/' + editSourceId, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        if (!r.ok) { const t = await r.text(); showEditError(t || 'Failed to update source.'); return; }
+        closeEditSourceModal();
+        loadSources();
+    } catch { showEditError('Network error.'); }
+    finally { btn.disabled = false; btn.textContent = 'Save Changes'; }
+}
+
+function showEditError(msg) {
+    const bar = document.getElementById('editSourceModalError');
+    document.getElementById('editSourceModalErrorMsg').textContent = msg;
+    bar.style.display = 'flex';
+}
+
+document.getElementById('editSourceModal').addEventListener('click', function(e) { if (e.target === this) closeEditSourceModal(); });
+
+/* ── Delete source ──────────────────────────────────────── */
+async function deleteSource(tr) {
+    const id   = tr.dataset.id;
+    const name = tr.dataset.name || 'this source';
+    if (!confirm('Delete "' + name + '"? This cannot be undone.')) return;
+    try {
+        const r = await fetch('/api/sources/' + id, { method: 'DELETE' });
+        if (!r.ok) { alert('Failed to delete source.'); return; }
+        loadSources();
+    } catch { alert('Network error.'); }
+}
+
+/* ── Bulk selection (#72) ───────────────────────────────── */
+function getSelectedIds() {
+    return Array.from(document.querySelectorAll('.src-chk:checked')).map(c => parseInt(c.dataset.id));
+}
+
+function onCheckChange() {
+    const ids = getSelectedIds();
+    const bar = document.getElementById('bulkBar');
+    bar.style.display = ids.length ? 'flex' : 'none';
+    document.getElementById('bulkCount').textContent = ids.length + ' selected';
+    const all = document.getElementById('chkAll');
+    if (all) {
+        const total = document.querySelectorAll('.src-chk').length;
+        all.checked = ids.length === total && total > 0;
+        all.indeterminate = ids.length > 0 && ids.length < total;
+    }
+}
+
+function toggleAll(checked) {
+    document.querySelectorAll('.src-chk').forEach(c => c.checked = checked);
+    onCheckChange();
+}
+
+function clearSelection() {
+    document.querySelectorAll('.src-chk').forEach(c => c.checked = false);
+    const all = document.getElementById('chkAll');
+    if (all) { all.checked = false; all.indeterminate = false; }
+    document.getElementById('bulkBar').style.display = 'none';
+}
+
+async function bulkDelete() {
+    const ids = getSelectedIds();
+    if (!ids.length) return;
+    if (!confirm('Delete ' + ids.length + ' source(s)? This cannot be undone.')) return;
+    try {
+        const r = await fetch('/api/sources/bulk-delete', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ids })
+        });
+        if (!r.ok) { alert('Bulk delete failed (HTTP ' + r.status + ')'); return; }
+        clearSelection();
+        resetAndLoad();
+    } catch { alert('Network error.'); }
+}
+
+async function bulkSetStatus() {
+    const ids    = getSelectedIds();
+    const status = document.getElementById('bulkStatusSelect').value;
+    if (!ids.length) return;
+    try {
+        const r = await fetch('/api/sources/bulk-status', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ ids, status })
+        });
+        if (!r.ok) { alert('Bulk status update failed.'); return; }
+        clearSelection();
+        resetAndLoad();
+    } catch { alert('Network error.'); }
+}
+
+/* ── Activity Chart (#18/#22/#23) ───────────────────────── */
+var activityChartInstance = null;
+
+async function openActivityModal(sourceId, sourceName) {
+    document.getElementById('activityModalTitle').textContent = 'Activity — ' + sourceName;
+    document.getElementById('activityModal').classList.remove('hidden');
+
+    const canvas = document.getElementById('activityChart');
+    if (activityChartInstance) { activityChartInstance.destroy(); activityChartInstance = null; }
+
+    try {
+        const r = await fetch('/api/sources/' + sourceId + '/activity?hours=24');
+        if (!r.ok) { canvas.parentElement.innerHTML = '<p style="color:var(--text-muted)">Failed to load activity.</p>'; return; }
+        const data = await r.json();
+
+        const labels = data.map(b => {
+            const d = new Date(b.bucketTime);
+            return d.getHours().toString().padStart(2,'0') + ':' + d.getMinutes().toString().padStart(2,'0');
+        });
+        const counts = data.map(b => b.eventCount);
+
+        activityChartInstance = new Chart(canvas, {
+            type: 'line',
+            data: {
+                labels,
+                datasets: [{
+                    label: 'Events',
+                    data: counts,
+                    borderColor: '#00d4ff',
+                    backgroundColor: 'rgba(0,212,255,0.12)',
+                    pointRadius: 2,
+                    tension: 0.3,
+                    fill: true
+                }]
+            },
+            options: {
+                responsive: true,
+                plugins: { legend: { display: false } },
+                scales: {
+                    x: { ticks: { color: '#888', maxTicksLimit: 12 }, grid: { color: 'rgba(255,255,255,0.05)' } },
+                    y: { ticks: { color: '#888' }, grid: { color: 'rgba(255,255,255,0.05)' }, beginAtZero: true }
+                }
+            }
+        });
+    } catch { canvas.parentElement.innerHTML = '<p style="color:var(--text-muted)">Error loading activity data.</p>'; }
+}
+
+function closeActivityModal() {
+    document.getElementById('activityModal').classList.add('hidden');
+    if (activityChartInstance) { activityChartInstance.destroy(); activityChartInstance = null; }
+}
+
+document.getElementById('activityModal').addEventListener('click', function(e) { if (e.target === this) closeActivityModal(); });
+</script>
+}

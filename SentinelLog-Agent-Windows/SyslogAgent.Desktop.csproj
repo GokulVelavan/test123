@@ -1,0 +1,48 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <OutputType>WinExe</OutputType>
+    <TargetFramework>net8.0-windows</TargetFramework>
+    <UseWPF>true</UseWPF>
+    <Nullable>enable</Nullable>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <RootNamespace>SyslogAgent.Desktop</RootNamespace>
+    <AssemblyName>SyslogAgent.Desktop</AssemblyName>
+    <Version>1.0.0</Version>
+    <DebugType>none</DebugType>
+    <DebugSymbols>false</DebugSymbols>
+    <ApplicationManifest>app.manifest</ApplicationManifest>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Syslog-Machine-agent\src\SyslogAgent\SyslogAgent.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <None Update="appsettings.json">
+      <CopyToOutputDirectory>Always</CopyToOutputDirectory>
+    </None>
+  </ItemGroup>
+
+  <Target Name="CleanupPublishOutput" AfterTargets="ComputeFilesToPublish">
+    <ItemGroup>
+      <!-- Remove duplicate appsettings.json from referenced SyslogAgent project -->
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)"
+        Condition="'%(ResolvedFileToPublish.RelativePath)' == 'appsettings.json' AND $([System.String]::Copy('%(ResolvedFileToPublish.FullPath)').Contains('Syslog-Machine-agent'))" />
+      <!-- Remove standalone SyslogAgent executable and its config -->
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)"
+        Condition="'%(ResolvedFileToPublish.RelativePath)' == 'SyslogAgent.exe'" />
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)"
+        Condition="'%(ResolvedFileToPublish.RelativePath)' == 'SyslogAgent.deps.json'" />
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)"
+        Condition="'%(ResolvedFileToPublish.RelativePath)' == 'SyslogAgent.runtimeconfig.json'" />
+      <!-- Remove ASP.NET Core in-process hosting (not needed for WPF) -->
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)"
+        Condition="'%(ResolvedFileToPublish.RelativePath)' == 'aspnetcorev2_inprocess.dll'" />
+      <!-- Remove SyslogAgent debug symbols -->
+      <ResolvedFileToPublish Remove="@(ResolvedFileToPublish)"
+        Condition="'%(ResolvedFileToPublish.RelativePath)' == 'SyslogAgent.pdb'" />
+    </ItemGroup>
+  </Target>
+
+</Project>

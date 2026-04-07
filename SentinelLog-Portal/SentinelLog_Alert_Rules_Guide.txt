@@ -1,0 +1,204 @@
+================================================================
+  SENTINELLOG — ALERT RULES QUICK REFERENCE
+================================================================
+
+HOW THE PIPELINE WORKS
+-----------------------
+  Your Laptop
+    → Agent collects Windows Event Logs (every 30 seconds batch)
+    → Sends via UDP syslog to receiver (127.0.0.1:514)
+    → Receiver saves to [systemlogs] table
+    → Worker polls [systemlogs] → parses → evaluates rules
+    → Match found → AlertEvent created in [alertevent] table
+    → Portal shows it under Alerts
+
+
+
+================================================================
+  NEW ALERT RULE — FIELD GUIDE
+================================================================
+
+RULE NAME *
+  Any descriptive name.
+  Example: "Login Error", "Brute Force Detection"
+
+DESCRIPTION
+  Optional. Just a note for yourself.
+
+SEVERITY
+  The minimum severity level to match.
+  Logs with EQUAL OR HIGHER severity than this will match.
+
+  Severity scale (highest → lowest):
+    Emergency  (0)  ← most severe
+    Alert      (1)
+    Critical   (2)
+    Error      (3)
+    Warning    (4)
+    Notice     (5)
+    Info       (6)
+    Debug      (7)  ← least severe
+
+  Example: Severity = "Error"
+    → matches Error, Critical, Alert, Emergency
+    → does NOT match Warning, Notice, Info, Debug
+
+TIME WINDOW (MINS)
+  Stored in the database.
+  NOTE: Currently informational only — does NOT affect when
+  the rule fires. Every matching log fires the rule immediately
+  regardless of this value. This will be used in a future
+  update for rate-based alerting (e.g. fire only after N
+  matches within the window).
+
+SOURCE TYPE  ← accepts any of these three formats:
+  1. IP Address   → 192.168.10.99
+  2. Hostname     → DESKTOP-J3OG6BB
+  3. Device Type  → Network | Firewall | Security | Windows
+                    Linux | Database | WebServer | Container
+                    Monitoring | OS | Generic
+
+  Leave EMPTY to match logs from ALL sources.
+
+  Device Types are auto-inferred from the program/process name:
+    sshd, network, nmbd, smbd, openvpn  → Network
+    security, audit, defender, sysmon   → Security
+    firewall, iptables, ufw, nftables   → Firewall
+    nginx, apache, httpd, iis           → WebServer
+    mysql, postgres, mssql, mongodb     → Database
+    kernel, systemd, journald, cron     → OS
+    docker, containerd, kubelet         → Container
+
+CONDITION EXPRESSION
+  Keyword match against the log message (case-insensitive).
+
+  Simple keyword:
+    failed logon
+    authentication failure
+    error
+
+  AND (both must be present):
+    authentication failure AND admin
+
+  OR (either must be present):
+    failed logon OR failed password OR invalid user
+
+  Leave EMPTY to match any message (combined with severity/source).
+
+ENABLE RULE IMMEDIATELY
+  Toggle ON = rule is active as soon as you click Create Rule.
+  Toggle OFF = rule is saved but disabled.
+
+
+
+================================================================
+  HOW TO TRIGGER FROM YOUR LAPTOP
+================================================================
+
+RULE SETUP EXAMPLE — "Login Error"
+  Rule Name:           Login Error
+  Severity:            Error
+  Source Type:         192.168.10.99   (your laptop's IP)
+  Condition:           failed logon OR authentication failure
+  Time Window:         5
+  Enable Immediately:  ON
+
+ACTION ON YOUR LAPTOP TO TRIGGER IT:
+
+  Option 1 — Lock screen wrong password
+    Press Win+L → type wrong password 2-3 times
+    Generates: Windows Event ID 4625 (Failed Logon)
+
+  Option 2 — Command prompt
+    net use \\localhost /user:fakeadmin wrongpassword
+    Run 2-3 times. Generates Event ID 4625.
+
+  Option 3 — RunAs with bad credentials
+    runas /user:doesnotexist cmd
+    Type any password when prompted. Generates Event ID 4625.
+
+  Option 4 — PowerShell bulk (for anomaly testing)
+    1..10 | ForEach-Object {
+      net use \\localhost /user:fakeadmin wrongpass 2>$null
+    }
+
+After any of the above:
+  Wait ~30 seconds (agent batch interval)
+  → Check Alerts page in SentinelLog portal
+
+
+
+================================================================
+  ANOMALY DETECTION — RULE GUIDE
+================================================================
+
+METRIC TYPES:
+  EpsTotal        — fires when total events/sec spikes above baseline
+  SeveritySpike   — fires when Critical/Emergency event count surges
+  AuthFailureRate — fires when auth failure keyword count spikes
+  NewSourceIp     — fires when a new unknown device appears
+  SilentSource    — fires when a known device stops sending logs
+
+KEY FIELDS:
+  BaselineWindowMinutes — how far back to measure the "normal" baseline
+  ThresholdMultiplier   — how many times above baseline triggers the rule
+                          (e.g. 2.0 = fires when double the normal rate)
+  AbsoluteMinimum       — minimum count before multiplier applies
+                          (prevents noise when baseline is near zero)
+  AutoCreateIncident    — if true, auto-creates an Incident when fired
+
+TRIGGER EXAMPLE — AuthFailureRate
+  BaselineWindowMinutes: 5
+  ThresholdMultiplier:   2.0
+  AbsoluteMinimum:       3
+  AutoCreateIncident:    true
+
+  Then run on your laptop:
+    1..10 | ForEach-Object {
+      net use \\localhost /user:fakeadmin wrongpass 2>$null
+    }
+  → Anomaly fires → Incident auto-created
+
+
+
+================================================================
+  INCIDENTS — GUIDE
+================================================================
+
+  Incidents are NOT auto-triggered by raw logs.
+  They are created by:
+    1. Manually via the portal (Incidents → + New Incident)
+    2. Automatically when an Anomaly rule fires with
+       AutoCreateIncident = true
+
+  Status values:  Open | InProgress | Resolved | Closed
+  Priority:       Critical | High | Medium | Low
+
+
+
+================================================================
+  THREAT INTEL — GUIDE
+================================================================
+
+  Add known bad IPs, domains, or file hashes.
+  Use the Check endpoint to see if a value is flagged.
+  Does NOT auto-scan incoming logs — manual lookup only.
+
+  Types: IP | Domain | Hash | URL
+
+  To check if your laptop's IP is flagged:
+    GET /api/threat-intel/check?value=192.168.10.99
+
+
+
+================================================================
+  LOG FORWARDING — GUIDE
+================================================================
+
+  Forwards logs from SentinelLog to another syslog destination.
+  Not triggered by events — passive config only.
+
+  Protocol: UDP | TCP
+  Just set destination host + port and enable it.
+
+================================================================

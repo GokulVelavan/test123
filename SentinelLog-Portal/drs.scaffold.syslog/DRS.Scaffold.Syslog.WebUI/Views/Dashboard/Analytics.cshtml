@@ -1,0 +1,332 @@
+@{
+    Layout = "_AppLayout";
+    ViewData["Title"] = "Analytics";
+    ViewData["TopbarMeta"] = "Event volume trends, severity breakdown and top talkers";
+}
+
+<div style="padding:20px;display:flex;flex-direction:column;gap:16px">
+
+    <div class="panel">
+        <div class="panel-header">
+            <div class="panel-title">Event Volume &mdash; 24h</div>
+            <div class="panel-controls">
+                <select class="select-sm" id="volRange" onchange="loadVolume()">
+                    <option value="24">Last 24h</option>
+                    <option value="12">Last 12h</option>
+                    <option value="6">Last 6h</option>
+                    <option value="48">Last 48h</option>
+                    <option value="168">Last 7d</option>
+                </select>
+                <select class="select-sm" id="volBucket" onchange="loadVolume()">
+                    <option value="60">1h buckets</option>
+                    <option value="30">30m buckets</option>
+                    <option value="15">15m buckets</option>
+                    <option value="5">5m buckets</option>
+                    <option value="1440">1d buckets</option>
+                </select>
+                <select class="select-sm" id="volMode" onchange="loadVolume()">
+                    <option value="severity">By Severity</option>
+                    <option value="source">By Source</option>
+                </select>
+            </div>
+        </div>
+        <div class="chart-area">
+            <canvas id="volumeChart"></canvas>
+        </div>
+    </div>
+
+    <!-- Event Rate Line Chart -->
+    <div class="panel">
+        <div class="panel-header">
+            <div class="panel-title">Event Rate &mdash; Multi-Severity Trend</div>
+            <div class="panel-controls">
+                <select class="select-sm" id="rateRange" onchange="loadEventRate()">
+                    <option value="24">Last 24h</option>
+                    <option value="12">Last 12h</option>
+                    <option value="6">Last 6h</option>
+                    <option value="48">Last 48h</option>
+                </select>
+            </div>
+        </div>
+        <div class="chart-area">
+            <canvas id="rateChart"></canvas>
+        </div>
+    </div>
+
+    <div class="analytics-mid">
+        <div class="panel">
+            <div class="panel-header"><div class="panel-title">Severity Breakdown</div></div>
+            <div id="severityBreakdown" style="padding:1rem;color:var(--text-muted)">Loading&hellip;</div>
+        </div>
+        <div class="panel">
+            <div class="panel-header"><div class="panel-title">Top Talkers</div></div>
+            <div id="topTalkers" style="padding:1rem;color:var(--text-muted)">Loading&hellip;</div>
+        </div>
+    </div>
+
+    <!-- Activity Heatmap (#51) -->
+    <div class="panel">
+        <div class="panel-header">
+            <div class="panel-title">Activity Heatmap &mdash; Day &times; Hour</div>
+            <div class="panel-controls">
+                <select class="select-sm" id="heatmapDays" onchange="loadHeatmap()">
+                    <option value="7">Last 7 days</option>
+                    <option value="14">Last 14 days</option>
+                    <option value="30">Last 30 days</option>
+                </select>
+            </div>
+        </div>
+        <div id="heatmapContainer" style="padding:1rem;overflow-x:auto">
+            <div style="color:var(--text-muted)">Loading&hellip;</div>
+        </div>
+    </div>
+
+    <!-- Security Category Breakdown (#52) -->
+    <div class="panel">
+        <div class="panel-header"><div class="panel-title">Security Event Categories</div></div>
+        <div class="chart-area" style="height:220px">
+            <canvas id="categoryChart"></canvas>
+        </div>
+    </div>
+
+</div>
+
+@section Scripts {
+<script src="/lib/chart.umd.min.js"></script>
+<script>
+var volumeChart = null;
+var rateChart = null;
+function esc(s) { var d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+async function loadVolume() {
+    const hours  = document.getElementById('volRange').value;
+    const bucket = document.getElementById('volBucket').value;
+    const mode   = document.getElementById('volMode').value;
+    const ctx    = document.getElementById('volumeChart').getContext('2d');
+    if (volumeChart) volumeChart.destroy();
+
+    if (mode === 'source') {
+        // By Source: show top 8 sources as individual bars with their event count
+        const r = await fetch('/api/logs/analytics/top-talkers?topN=8');
+        if (!r.ok) return;
+        const data = await r.json();
+        const palette = ['#00d4ff','#7b8cff','#ff3b5c','#ffcd47','#2ecc71','#ff6b35','#4895ef','#95a5a6'];
+        volumeChart = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: data.map(d => d.host || 'Unknown'),
+                datasets: [{ label: 'Events', data: data.map(d => d.eventCount || 0), backgroundColor: data.map((_,i) => palette[i % palette.length] + 'cc'), borderColor: data.map((_,i) => palette[i % palette.length]), borderWidth: 1 }]
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false,
+                plugins: { legend: { display: false } },
+                scales: {
+                    x: { ticks: { color: '#3d5280' }, grid: { color: '#1e2d45' } },
+                    y: { ticks: { color: '#3d5280' }, grid: { color: '#1e2d45' }, beginAtZero: true }
+                }
+            }
+        });
+        return;
+    }
+
+    // existing by-severity code:
+    const r = await fetch('/api/logs/analytics/event-volume?hours=' + hours + '&bucketMinutes=' + bucket);
+    if (!r.ok) return;
+    const data = await r.json();
+    const fmt = bucket >= 1440 ? 10 : (bucket >= 60 ? 11 : 11);
+    const len = bucket >= 1440 ? 10 : 16;
+    volumeChart = new Chart(ctx, {
+        type: 'bar',
+        data: {
+            labels: data.map(d => (d.bucketTime || '').substring(fmt, len)),
+            datasets: [
+                { label: 'Critical', data: data.map(d => d.critical || 0), backgroundColor: 'rgba(255,59,92,0.7)'   },
+                { label: 'Error',    data: data.map(d => d.error    || 0), backgroundColor: 'rgba(255,107,53,0.7)'  },
+                { label: 'Warning',  data: data.map(d => d.warning  || 0), backgroundColor: 'rgba(255,209,102,0.7)' },
+                { label: 'Info',     data: data.map(d => d.info     || 0), backgroundColor: 'rgba(0,212,255,0.4)'   }
+            ]
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            plugins: { legend: { labels: { color: '#7a90b8' } } },
+            scales: {
+                x: { stacked: true, ticks: { color: '#3d5280' }, grid: { color: '#1e2d45' } },
+                y: { stacked: true, ticks: { color: '#3d5280' }, grid: { color: '#1e2d45' } }
+            }
+        }
+    });
+}
+
+async function loadBreakdown() {
+    const r = await fetch('/api/logs/analytics/severity-breakdown');
+    if (!r.ok) return;
+    const s = await r.json();
+    const rows = [
+        ['Critical', s.critical, 'var(--sev-critical)'],
+        ['Error',    s.error,    'var(--sev-error)'   ],
+        ['Warning',  s.warning,  'var(--sev-warning)' ],
+        ['Notice',   s.notice,   'var(--sev-notice)'  ],
+        ['Info',     s.info,     'var(--sev-info)'    ],
+        ['Debug',    s.debug,    'var(--sev-debug)'   ]
+    ];
+    const max = Math.max(s.critical, s.error, s.warning, s.notice, s.info, s.debug, 1);
+    document.getElementById('severityBreakdown').innerHTML =
+        '<div class="sparkline-row">' + rows.map(([label, val, color]) => {
+            const pct = Math.round((val || 0) / max * 100);
+            return `<div class="spark-item">
+                <span class="spark-label">${esc(label)}</span>
+                <div class="spark-bar-bg"><div class="spark-bar" style="width:${pct}%;background:${color}"></div></div>
+                <span class="spark-val">${(val || 0).toLocaleString()}</span>
+            </div>`;
+        }).join('') + '</div>';
+}
+
+async function loadTopTalkers() {
+    const r = await fetch('/api/logs/analytics/top-talkers?topN=10');
+    if (!r.ok) return;
+    const items = await r.json();
+    if (!items.length) { document.getElementById('topTalkers').innerHTML = '<span style="color:var(--text-muted)">No data.</span>'; return; }
+    const maxEvt = items[0]?.eventCount || 1;
+    const rows = items.map((t, i) => {
+        const barW = Math.max(2, Math.round((t.eventCount||0)/maxEvt*80));
+        return `<tr>
+            <td style="color:var(--text-muted);font-size:11px">#${i+1}</td>
+            <td class="mono" style="color:var(--accent-cyan)">${esc(t.host || '')}</td>
+            <td style="font-variant-numeric:tabular-nums">${(t.eventCount||0).toLocaleString()}</td>
+            <td style="color:var(--text-muted);font-size:11px">${esc(t.deviceType || '—')}</td>
+            <td><div style="width:${barW}px;height:4px;background:var(--accent-cyan);border-radius:2px;opacity:0.6"></div></td>
+        </tr>`;
+    }).join('');
+    document.getElementById('topTalkers').innerHTML =
+        `<table class="top-talkers"><thead><tr><th>#</th><th>Host</th><th>Events</th><th>Type</th><th></th></tr></thead><tbody>${rows}</tbody></table>`;
+}
+
+async function loadEventRate() {
+    const hours  = document.getElementById('rateRange').value;
+    const bucket = 60;
+    const r = await fetch('/api/logs/analytics/event-volume?hours=' + hours + '&bucketMinutes=' + bucket);
+    if (!r.ok) return;
+    const data = await r.json();
+    const ctx = document.getElementById('rateChart').getContext('2d');
+    if (rateChart) rateChart.destroy();
+    rateChart = new Chart(ctx, {
+        type: 'line',
+        data: {
+            labels: data.map(d => (d.bucketTime || '').substring(11, 16)),
+            datasets: [
+                {
+                    label: 'Critical', data: data.map(d => d.critical || 0),
+                    borderColor: 'rgba(255,59,92,0.9)', backgroundColor: 'rgba(255,59,92,0.08)',
+                    fill: true, tension: 0.4, pointRadius: 2
+                },
+                {
+                    label: 'Error', data: data.map(d => d.error || 0),
+                    borderColor: 'rgba(255,107,53,0.9)', backgroundColor: 'rgba(255,107,53,0.06)',
+                    fill: true, tension: 0.4, pointRadius: 2
+                },
+                {
+                    label: 'Warning', data: data.map(d => d.warning || 0),
+                    borderColor: 'rgba(255,209,102,0.9)', backgroundColor: 'rgba(255,209,102,0.05)',
+                    fill: true, tension: 0.4, pointRadius: 2
+                },
+                {
+                    label: 'Info', data: data.map(d => d.info || 0),
+                    borderColor: 'rgba(0,212,255,0.7)', backgroundColor: 'rgba(0,212,255,0.03)',
+                    fill: true, tension: 0.4, pointRadius: 2
+                }
+            ]
+        },
+        options: {
+            responsive: true, maintainAspectRatio: false,
+            interaction: { mode: 'index', intersect: false },
+            plugins: { legend: { labels: { color: '#7a90b8', boxWidth: 12 } } },
+            scales: {
+                x: { ticks: { color: '#3d5280' }, grid: { color: '#1e2d45' } },
+                y: { ticks: { color: '#3d5280' }, grid: { color: '#1e2d45' }, beginAtZero: true }
+            }
+        }
+    });
+}
+
+loadVolume();
+loadEventRate();
+loadBreakdown();
+loadTopTalkers();
+loadHeatmap();
+loadCategories();
+
+/* ── Activity Heatmap (#51) ──────────────────────────────── */
+const DAYS_ABBR  = ['Sun','Mon','Tue','Wed','Thu','Fri','Sat'];
+var categoryChartInst = null;
+
+async function loadHeatmap() {
+    const days = document.getElementById('heatmapDays').value;
+    const container = document.getElementById('heatmapContainer');
+    container.innerHTML = '<div style="color:var(--text-muted)">Loading\u2026</div>';
+    try {
+        const r = await fetch('/api/logs/analytics/heatmap?days=' + days);
+        if (!r.ok) { container.innerHTML = '<div style="color:var(--sev-error)">Failed to load heatmap.</div>'; return; }
+        const data = await r.json();
+
+        // Build a 7×24 grid: grid[day][hour] = count
+        const grid = Array.from({length: 7}, () => new Array(24).fill(0));
+        data.forEach(b => { if (b.day >= 0 && b.day < 7 && b.hour >= 0 && b.hour < 24) grid[b.day][b.hour] = b.eventCount; });
+        const maxVal = Math.max(1, ...data.map(b => b.eventCount));
+
+        // Render HTML grid
+        const hourHeaders = '<th style="width:32px"></th>' + Array.from({length:24}, (_, h) => `<th style="width:32px;text-align:center;font-size:10px;color:var(--text-muted)">${h}</th>`).join('');
+        const rowsHtml = grid.map((hours, day) => {
+            const cells = hours.map(count => {
+                const pct = count / maxVal;
+                const alpha = Math.round(pct * 220);
+                const bg = count === 0 ? 'var(--bg-elevated)' : `rgba(0,212,255,${(alpha/255).toFixed(2)})`;
+                const title = count > 0 ? count + ' events' : '';
+                return `<td style="width:32px;height:22px;background:${bg};border-radius:2px;cursor:default" title="${title}"></td>`;
+            }).join('');
+            return `<tr><td style="font-size:11px;color:var(--text-muted);white-space:nowrap;padding-right:8px">${DAYS_ABBR[day]}</td>${cells}</tr>`;
+        }).join('');
+
+        container.innerHTML = `<table style="border-collapse:separate;border-spacing:3px"><thead><tr>${hourHeaders}</tr></thead><tbody>${rowsHtml}</tbody></table>
+            <div style="margin-top:8px;display:flex;align-items:center;gap:6px;font-size:11px;color:var(--text-muted)">
+                <span>Low</span>
+                <div style="display:flex;gap:2px">${[0.1,0.3,0.5,0.7,0.9,1].map(a => `<div style="width:14px;height:10px;border-radius:2px;background:rgba(0,212,255,${a.toFixed(1)})"></div>`).join('')}</div>
+                <span>High</span>
+            </div>`;
+    } catch { container.innerHTML = '<div style="color:var(--sev-error)">Network error.</div>'; }
+}
+
+/* ── Security Category Breakdown (#52) ─────────────────── */
+async function loadCategories() {
+    try {
+        const r = await fetch('/api/logs/analytics/categories');
+        if (!r.ok) return;
+        const data = await r.json();
+        const ctx = document.getElementById('categoryChart').getContext('2d');
+        if (categoryChartInst) categoryChartInst.destroy();
+        const colors = ['#00d4ff','#7b8cff','#ff3b5c','#ffcd47','#2ecc71','#95a5a6'];
+        categoryChartInst = new Chart(ctx, {
+            type: 'bar',
+            data: {
+                labels: data.map(d => d.category),
+                datasets: [{
+                    label: 'Events',
+                    data: data.map(d => d.eventCount),
+                    backgroundColor: data.map((_, i) => colors[i % colors.length] + 'cc'),
+                    borderColor:     data.map((_, i) => colors[i % colors.length]),
+                    borderWidth: 1
+                }]
+            },
+            options: {
+                indexAxis: 'y',
+                responsive: true, maintainAspectRatio: false,
+                plugins: { legend: { display: false } },
+                scales: {
+                    x: { ticks: { color: '#3d5280' }, grid: { color: '#1e2d45' }, beginAtZero: true },
+                    y: { ticks: { color: '#7a90b8' }, grid: { color: '#1e2d45' } }
+                }
+            }
+        });
+    } catch (_) {}
+}
+</script>
+}

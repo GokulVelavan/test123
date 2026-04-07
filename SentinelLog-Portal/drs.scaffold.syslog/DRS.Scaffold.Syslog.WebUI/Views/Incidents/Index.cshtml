@@ -1,0 +1,277 @@
+@{
+    Layout = "_AppLayout";
+    ViewData["Title"] = "Incident Management";
+    ViewData["TopbarMeta"] = "Track and manage security incidents";
+}
+<div style="padding:20px;display:flex;flex-direction:column;gap:16px">
+
+    @* ── Summary KPIs ──────────────────────────────────────────────────────── *@
+    <div style="display:grid;grid-template-columns:repeat(5,1fr);gap:12px" id="incidentKpis">
+        <div class="kpi-card"><div class="kpi-label">Open Incidents</div><div class="kpi-value" id="kpiOpen">—</div></div>
+        <div class="kpi-card"><div class="kpi-label">Critical</div><div class="kpi-value" style="color:var(--sev-emerg)" id="kpiCritical">—</div></div>
+        <div class="kpi-card"><div class="kpi-label">High</div><div class="kpi-value" style="color:var(--sev-error)" id="kpiHigh">—</div></div>
+        <div class="kpi-card"><div class="kpi-label">Resolved</div><div class="kpi-value" style="color:var(--sev-notice)" id="kpiResolved">—</div></div>
+        <div class="kpi-card"><div class="kpi-label">This Week</div><div class="kpi-value" id="kpiWeek">—</div></div>
+    </div>
+
+    @* ── Incident List ─────────────────────────────────────────────────────── *@
+    <div class="panel">
+        <div class="panel-header">
+            <div class="panel-title">Incidents</div>
+            <div class="panel-controls">
+                <select class="select-sm" id="filterStatus" onchange="loadIncidents()">
+                    <option value="">All Statuses</option>
+                    <option value="Open">Open</option>
+                    <option value="Investigating">Investigating</option>
+                    <option value="Contained">Contained</option>
+                    <option value="Resolved">Resolved</option>
+                    <option value="Closed">Closed</option>
+                    <option value="FalsePositive">False Positive</option>
+                </select>
+                <select class="select-sm" id="filterPriority" onchange="loadIncidents()">
+                    <option value="">All Priorities</option>
+                    <option value="Critical">Critical</option>
+                    <option value="High">High</option>
+                    <option value="Medium">Medium</option>
+                    <option value="Low">Low</option>
+                    <option value="Informational">Informational</option>
+                </select>
+                <button class="btn btn-accent btn-sm" onclick="openCreateModal()">&#43; New Incident</button>
+            </div>
+        </div>
+        <div id="incidentTableWrap">
+            <table class="data-table" id="incidentTable">
+                <thead>
+                    <tr>
+                        <th>ID</th>
+                        <th>Title</th>
+                        <th>Priority</th>
+                        <th>Status</th>
+                        <th>Assignee</th>
+                        <th>Created</th>
+                        <th>Actions</th>
+                    </tr>
+                </thead>
+                <tbody id="incidentTbody">
+                    <tr><td colspan="7" style="color:var(--text-muted);text-align:center">Loading…</td></tr>
+                </tbody>
+            </table>
+        </div>
+        <div id="incidentPager" style="display:flex;gap:8px;padding:12px 16px;align-items:center;border-top:1px solid var(--border)"></div>
+    </div>
+
+</div>
+
+@* ── Create / Edit Modal ─────────────────────────────────────────────────────── *@
+<div class="modal-overlay hidden" id="incidentModal">
+    <div class="modal-box" style="max-width:560px">
+        <div class="modal-header">
+            <div class="modal-title" id="modalTitle">New Incident</div>
+            <button class="modal-close" onclick="closeModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <div class="form-row">
+                <label class="form-label">Title *</label>
+                <input class="form-input" id="incTitle" placeholder="Brief description of the incident" />
+            </div>
+            <div class="form-row-2">
+                <div class="form-row">
+                    <label class="form-label">Priority</label>
+                    <select class="form-select" id="incPriority">
+                        <option value="Critical">Critical</option>
+                        <option value="High">High</option>
+                        <option value="Medium" selected>Medium</option>
+                        <option value="Low">Low</option>
+                        <option value="Informational">Informational</option>
+                    </select>
+                </div>
+                <div class="form-row">
+                    <label class="form-label">Status</label>
+                    <select class="form-select" id="incStatus">
+                        <option value="Open" selected>Open</option>
+                        <option value="Investigating">Investigating</option>
+                        <option value="Contained">Contained</option>
+                        <option value="Resolved">Resolved</option>
+                        <option value="Closed">Closed</option>
+                        <option value="FalsePositive">False Positive</option>
+                    </select>
+                </div>
+            </div>
+            <div class="form-row">
+                <label class="form-label">Description</label>
+                <textarea class="form-textarea" id="incDesc" placeholder="Detailed incident description…"></textarea>
+            </div>
+            <div class="form-row">
+                <label class="form-label">Affected Hosts (comma-separated)</label>
+                <input class="form-input" id="incHosts" placeholder="server-01, router-02…" />
+            </div>
+            <div class="form-row">
+                <label class="form-label">Tags (comma-separated)</label>
+                <input class="form-input" id="incTags" placeholder="malware, lateral-movement…" />
+            </div>
+            <div class="form-row">
+                <label class="form-label">Analyst Notes</label>
+                <textarea class="form-textarea" id="incNotes" placeholder="Investigation timeline, findings, next steps…"></textarea>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-ghost btn-sm" onclick="closeModal()">Cancel</button>
+            <button class="btn btn-accent btn-sm" id="modalSaveBtn" onclick="saveIncident()">Create Incident</button>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+function esc(s) { var d = document.createElement('div'); d.textContent = String(s ?? ''); return d.innerHTML; }
+
+var _page = 1, _pageSize = 25, _editId = null;
+
+const PRIORITY_COLORS = { Critical: 'var(--sev-emerg)', High: 'var(--sev-error)', Medium: 'var(--sev-warning)', Low: 'var(--sev-notice)', Informational: 'var(--sev-info)' };
+const STATUS_COLORS   = { Open: 'var(--sev-error)', Investigating: 'var(--sev-warning)', Contained: 'var(--accent-cyan)', Resolved: 'var(--sev-notice)', Closed: 'var(--text-muted)', FalsePositive: 'var(--text-muted)' };
+
+async function loadSummary() {
+    try {
+        const r = await fetch('/api/incidents/summary');
+        if (!r.ok) return;
+        const d = await r.json();
+        document.getElementById('kpiOpen').textContent     = d.totalOpen     ?? 0;
+        document.getElementById('kpiCritical').textContent = d.totalCritical ?? 0;
+        document.getElementById('kpiHigh').textContent     = d.totalHigh     ?? 0;
+        document.getElementById('kpiResolved').textContent = d.totalResolved ?? 0;
+        document.getElementById('kpiWeek').textContent     = d.totalThisWeek ?? 0;
+    } catch {}
+}
+
+async function loadIncidents() {
+    const status   = document.getElementById('filterStatus').value;
+    const priority = document.getElementById('filterPriority').value;
+    let url = `/api/incidents?page=${_page}&pageSize=${_pageSize}`;
+    if (status)   url += `&status=${encodeURIComponent(status)}`;
+    if (priority) url += `&priority=${encodeURIComponent(priority)}`;
+
+    const tbody = document.getElementById('incidentTbody');
+    tbody.innerHTML = `<tr><td colspan="7" style="color:var(--text-muted);text-align:center">Loading…</td></tr>`;
+
+    try {
+        const r = await fetch(url);
+        if (!r.ok) { tbody.innerHTML = `<tr><td colspan="7" style="color:var(--sev-error);text-align:center">Failed to load.</td></tr>`; return; }
+        const d = await r.json();
+
+        if (!d.items || d.items.length === 0) {
+            tbody.innerHTML = `<tr><td colspan="7" style="color:var(--text-muted);text-align:center">No incidents found.</td></tr>`;
+            renderPager(d.totalCount || 0);
+            return;
+        }
+
+        tbody.innerHTML = d.items.map(i => `
+            <tr>
+                <td class="mono" style="color:var(--text-muted);font-size:11px">#${i.id}</td>
+                <td style="max-width:300px">
+                    <div style="font-weight:500;color:var(--text-primary)">${esc(i.title)}</div>
+                    <div style="font-size:11px;color:var(--text-muted);margin-top:2px">${esc(i.tags || '—')}</div>
+                </td>
+                <td><span style="color:${PRIORITY_COLORS[i.priority]||'var(--text-primary)'};font-weight:600;font-size:12px">${esc(i.priority)}</span></td>
+                <td><span class="sev-badge" style="background:${STATUS_COLORS[i.status]||'var(--bg-elevated)'}22;color:${STATUS_COLORS[i.status]||'var(--text-muted)'};border:1px solid ${STATUS_COLORS[i.status]||'var(--border)'}33">${esc(i.status)}</span></td>
+                <td style="color:var(--text-muted);font-size:12px">${i.assigneeName ? esc(i.assigneeName) : '—'}</td>
+                <td class="mono" style="font-size:11px;color:var(--text-muted)">${new Date(i.createdAt).toLocaleString()}</td>
+                <td>
+                    <button class="btn btn-sm" style="font-size:11px;padding:3px 8px;background:transparent;border:1px solid var(--border);color:var(--accent-cyan)" onclick="editIncident(${i.id})">Edit</button>
+                    <button class="btn btn-sm" style="font-size:11px;padding:3px 8px;background:transparent;border:1px solid var(--border);color:var(--sev-error);margin-left:4px" data-id="${i.id}" data-name="${esc(i.title ?? '')}" onclick="deleteIncident(parseInt(this.dataset.id), this.dataset.name)">Delete</button>
+                </td>
+            </tr>`).join('');
+
+        renderPager(d.totalCount || 0);
+    } catch { tbody.innerHTML = `<tr><td colspan="7" style="color:var(--sev-error);text-align:center">Network error.</td></tr>`; }
+}
+
+function renderPager(total) {
+    const totalPages = Math.ceil(total / _pageSize) || 1;
+    const pager = document.getElementById('incidentPager');
+    pager.innerHTML = `
+        <span style="font-size:12px;color:var(--text-muted);flex:1">${total} incidents</span>
+        <button class="btn btn-sm" style="font-size:11px" onclick="changePage(${_page - 1})" ${_page <= 1 ? 'disabled' : ''}>&#8249; Prev</button>
+        <span style="font-size:12px;color:var(--text-muted)">Page ${_page} of ${totalPages}</span>
+        <button class="btn btn-sm" style="font-size:11px" onclick="changePage(${_page + 1})" ${_page >= totalPages ? 'disabled' : ''}>Next &#8250;</button>`;
+}
+
+function changePage(p) { _page = p; loadIncidents(); }
+
+function openCreateModal() {
+    _editId = null;
+    document.getElementById('modalTitle').textContent = 'New Incident';
+    document.getElementById('modalSaveBtn').textContent = 'Create Incident';
+    ['incTitle','incDesc','incHosts','incTags','incNotes'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('incPriority').value = 'Medium';
+    document.getElementById('incStatus').value = 'Open';
+    document.getElementById('incidentModal').classList.remove('hidden');
+}
+
+async function editIncident(id) {
+    try {
+        const r = await fetch(`/api/incidents/${id}`);
+        if (!r.ok) return;
+        const d = await r.json();
+        _editId = id;
+        document.getElementById('modalTitle').textContent = `Edit Incident #${id}`;
+        document.getElementById('modalSaveBtn').textContent = 'Save Changes';
+        document.getElementById('incTitle').value    = d.title       || '';
+        document.getElementById('incDesc').value     = d.description || '';
+        document.getElementById('incHosts').value    = d.affectedHosts || '';
+        document.getElementById('incTags').value     = d.tags        || '';
+        document.getElementById('incNotes').value    = d.notes       || '';
+        document.getElementById('incPriority').value = d.priority    || 'Medium';
+        document.getElementById('incStatus').value   = d.status      || 'Open';
+        document.getElementById('incidentModal').classList.remove('hidden');
+    } catch {}
+}
+
+async function saveIncident() {
+    const body = {
+        title:         document.getElementById('incTitle').value.trim(),
+        description:   document.getElementById('incDesc').value.trim()  || null,
+        priority:      document.getElementById('incPriority').value,
+        status:        document.getElementById('incStatus').value,
+        affectedHosts: document.getElementById('incHosts').value.trim() || null,
+        tags:          document.getElementById('incTags').value.trim()  || null,
+        notes:         document.getElementById('incNotes').value.trim() || null
+    };
+    if (!body.title) { alert('Title is required.'); return; }
+
+    const url    = _editId ? `/api/incidents/${_editId}` : '/api/incidents';
+    const method = _editId ? 'PUT' : 'POST';
+    try {
+        const r = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+        if (!r.ok) { alert('Save failed.'); return; }
+        closeModal();
+        loadSummary();
+        loadIncidents();
+    } catch { alert('Network error.'); }
+}
+
+async function deleteIncident(id, name) {
+    if (!confirm('Delete incident #' + id + (name ? ' — ' + name : '') + '?')) return;
+    try {
+        await fetch(`/api/incidents/${id}`, { method: 'DELETE' });
+        loadSummary();
+        loadIncidents();
+    } catch {}
+}
+
+function closeModal() { document.getElementById('incidentModal').classList.add('hidden'); }
+
+// Close modal on backdrop click
+document.getElementById('incidentModal').addEventListener('click', function(e) {
+    if (e.target === this) closeModal();
+});
+
+loadSummary();
+loadIncidents();
+
+setInterval(function() {
+    if (!document.getElementById('incidentModal').classList.contains('hidden')) return;
+    loadSummary();
+    loadIncidents();
+}, 30000);
+</script>
+}

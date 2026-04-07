@@ -1,0 +1,374 @@
+@model DashboardViewModel
+@{
+    Layout = "_AppLayout";
+    ViewData["Title"] = "Overview";
+    ViewData["TopbarMeta"] = $"Last updated: {Model.FetchedAt.ToLocalTime():HH:mm:ss}";
+
+    string FmtEvents(long n) => n >= 1_000_000 ? $"{n / 1_000_000.0:F1}M"
+                              : n >= 1_000      ? $"{n / 1_000.0:F1}K"
+                              : n.ToString("N0");
+
+    string TrendHtml(double? pct, string neutralLabel)
+    {
+        if (pct is null) return $"<span>{neutralLabel}</span>";
+        var cls  = pct >= 0 ? "trend-up" : "trend-dn";
+        var arr  = pct >= 0 ? "&#x2191;" : "&#x2193;";
+        var val  = Math.Abs(pct.Value).ToString("F1");
+        return $"<span class=\"{cls}\">{arr} {val}% vs yesterday</span>";
+    }
+}
+
+<div class="overview-grid">
+
+    <!-- Metrics Row -->
+    <div class="metrics-row">
+        <div class="metric-card cyan">
+            <div class="metric-label">Total Events / 24h</div>
+            <div class="metric-value">@FmtEvents(Model.TotalEvents24h)</div>
+            <div class="metric-sub">@Html.Raw(TrendHtml(Model.TrendEvents, "events ingested today"))</div>
+        </div>
+        <div class="metric-card red">
+            <div class="metric-label">Critical Alerts</div>
+            <div class="metric-value">@Model.CriticalAlerts</div>
+            <div class="metric-sub">@(Model.CriticalAlerts == 1 ? "active alert" : "active alerts")</div>
+        </div>
+        <div class="metric-card orange">
+            <div class="metric-label">Errors / Hour</div>
+            <div class="metric-value">@Model.ErrorsPerHour.ToString("N0")</div>
+            <div class="metric-sub">@Html.Raw(TrendHtml(Model.TrendErrors, "error-level events / hr"))</div>
+        </div>
+        <div class="metric-card yellow">
+            <div class="metric-label">Warnings</div>
+            <div class="metric-value">@Model.Warnings.ToString("N0")</div>
+            <div class="metric-sub">@Html.Raw(TrendHtml(Model.TrendWarnings, "warning-level events"))</div>
+        </div>
+        <div class="metric-card green">
+            <div class="metric-label">Active Sources</div>
+            <div class="metric-value">@Model.ActiveSources</div>
+            <div class="metric-sub">
+                @if (Model.OfflineSources > 0)
+                {
+                    <span class="trend-dn">&#x2193; @Model.OfflineSources offline</span>
+                }
+                else
+                {
+                    <span>all sources online</span>
+                }
+            </div>
+        </div>
+        <div class="metric-card blue">
+            <div class="metric-label">EPS (now)</div>
+            <div class="metric-value">@Model.EpsNow.ToString("F2")</div>
+            <div class="metric-sub">events / sec</div>
+        </div>
+    </div>
+
+    <!-- Severity Donut Chart -->
+    <div class="panel" id="severityDonutPanel">
+        <div class="panel-header">
+            <div class="panel-title">Severity Breakdown</div>
+            <div class="panel-sub">last 24 hours</div>
+        </div>
+        <div style="display:flex;align-items:center;gap:32px;padding:20px 24px">
+            <div style="position:relative;width:200px;height:200px;flex-shrink:0">
+                <canvas id="severityDonut" width="200" height="200"></canvas>
+                <div id="donutCenter" style="position:absolute;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;pointer-events:none">
+                    <div style="font-family:var(--font-display);font-size:26px;font-weight:900;color:var(--text-primary);line-height:1" id="donutCenterVal">—</div>
+                    <div style="font-size:11px;color:var(--text-muted);margin-top:4px">total</div>
+                </div>
+            </div>
+            <div id="donutLegend" style="display:flex;flex-direction:column;gap:10px;flex:1;min-width:200px"></div>
+        </div>
+    </div>
+
+    <!-- Main panels -->
+    <div class="main-panels">
+
+        <!-- Recent Alerts -->
+        <div class="panel">
+            <div class="panel-header">
+                <div class="panel-title">Recent Alerts</div>
+                <div class="panel-controls">
+                    <a asp-controller="Dashboard" asp-action="Alerts" class="btn btn-ghost btn-sm">View all &#x2192;</a>
+                </div>
+            </div>
+            @if (Model.RecentAlerts.Count > 0)
+            {
+                <table class="alerts-table">
+                    <thead>
+                        <tr>
+                            <th>Time</th>
+                            <th>Severity</th>
+                            <th>Source</th>
+                            <th>Rule</th>
+                            <th>Message</th>
+                            <th>Status</th>
+                        </tr>
+                    </thead>
+                    <tbody>
+                        @foreach (var a in Model.RecentAlerts)
+                        {
+                            <tr>
+                                <td class="mono">@a.Time</td>
+                                <td><span class="sev-badge @a.Severity.ToLower()">@a.Severity.ToUpper()</span></td>
+                                <td class="mono" style="color:var(--accent-cyan)">@a.Source</td>
+                                <td>@a.RuleName</td>
+                                <td style="color:var(--text-muted)">@a.Message</td>
+                                <td>@a.Status</td>
+                            </tr>
+                        }
+                    </tbody>
+                </table>
+            }
+            else
+            {
+                <div style="padding:1.5rem;color:var(--text-muted);font-size:13px">No active alerts.</div>
+            }
+        </div>
+
+        <!-- Top Sources -->
+        <div class="panel">
+            <div class="panel-header">
+                <div class="panel-title">Top Sources</div>
+                <div class="panel-controls"><span class="panel-sub">by volume</span></div>
+            </div>
+            @if (Model.TopSources.Count > 0)
+            {
+                <div class="source-list">
+                    @foreach (var s in Model.TopSources)
+                    {
+                        <div class="source-item">
+                            <div class="source-dot" style="background:@s.Color"></div>
+                            <div>
+                                <div class="source-name">@s.Source</div>
+                                <div class="source-ip">@(string.IsNullOrEmpty(s.Ip) ? s.Type : $"{s.Ip} � {s.Type}")</div>
+                            </div>
+                            <div class="source-bar-wrap">
+                                <div class="source-bar-fill" style="width:@s.PctOfMax%;background:@s.Color"></div>
+                            </div>
+                            <div class="source-count">@FmtEvents(s.Events)</div>
+                        </div>
+                    }
+                </div>
+            }
+            else
+            {
+                <div style="padding:1.5rem;color:var(--text-muted);font-size:13px">No source data available.</div>
+            }
+        </div>
+
+    </div>
+
+    <!-- Source Types Breakdown (#22) -->
+    <div class="panel">
+        <div class="panel-header">
+            <div class="panel-title">Source Types</div>
+            <div class="panel-sub">by device category</div>
+        </div>
+        <div id="sourceTypesGrid" style="padding:1rem;display:grid;grid-template-columns:repeat(auto-fill,minmax(160px,1fr));gap:12px">
+            <div style="color:var(--text-muted);font-size:12px">Loading…</div>
+        </div>
+    </div>
+
+    <!-- Device Health (#23) -->
+    <div class="panel">
+        <div class="panel-header">
+            <div class="panel-title">Device Health</div>
+            <div class="panel-sub" id="deviceHealthSub"></div>
+        </div>
+        <div id="deviceHealthGrid" style="padding:1rem;display:flex;flex-wrap:wrap;gap:8px">
+            <div style="color:var(--text-muted);font-size:12px">Loading…</div>
+        </div>
+    </div>
+
+    <!-- Security Overview: Incidents · Threat Intel · Anomaly Detection -->
+    <div style="display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:16px" id="securityWidgetsRow">
+        <div style="color:var(--text-muted);font-size:12px">Loading security overview…</div>
+    </div>
+
+</div>
+
+@section Scripts {
+<script src="/lib/chart.umd.min.js"></script>
+<script>
+var donutChart = null;
+
+async function loadSeverityDonut() {
+    try {
+        const from24h = new Date(Date.now() - 86400000).toISOString();
+        const r = await fetch('/api/logs/analytics/severity-breakdown?from=' + encodeURIComponent(from24h));
+        if (!r.ok) return;
+        const s = await r.json();
+        const labels = ['Critical','Error','Warning','Notice','Info','Debug'];
+        const values = [s.critical||0, s.error||0, s.warning||0, s.notice||0, s.info||0, s.debug||0];
+        const colors = ['#ff3b5c','#ff6b35','#ffd166','#06d6a0','#4895ef','#7b8fa6'];
+        const total  = values.reduce((a,b) => a+b, 0);
+
+        const ctx = document.getElementById('severityDonut').getContext('2d');
+        if (donutChart) donutChart.destroy();
+        donutChart = new Chart(ctx, {
+            type: 'doughnut',
+            data: {
+                labels,
+                datasets: [{ data: values, backgroundColor: colors, borderWidth: 2, borderColor: 'var(--bg-card)', hoverOffset: 8 }]
+            },
+            options: {
+                responsive: true, maintainAspectRatio: false, cutout: '72%',
+                plugins: { legend: { display: false }, tooltip: { callbacks: {
+                    label: ctx => ' ' + ctx.label + ': ' + ctx.raw.toLocaleString() + ' (' + (total > 0 ? (ctx.raw/total*100).toFixed(1) : 0) + '%)'
+                }}}
+            }
+        });
+
+        document.getElementById('donutCenterVal').textContent = total >= 1000000 ? (total/1000000).toFixed(1)+'M' : total >= 1000 ? (total/1000).toFixed(1)+'K' : total;
+        document.getElementById('donutLegend').innerHTML = labels.map((l,i) => {
+            const pct = total > 0 ? (values[i]/total*100).toFixed(1) : '0.0';
+            return `<div style="display:flex;align-items:center;gap:10px">
+                <div style="width:10px;height:10px;border-radius:2px;background:${colors[i]};flex-shrink:0"></div>
+                <span style="font-size:12px;color:var(--text-secondary);min-width:64px">${l}</span>
+                <div style="flex:1;height:4px;background:var(--border);border-radius:2px;overflow:hidden">
+                    <div style="height:100%;width:${pct}%;background:${colors[i]};border-radius:2px"></div>
+                </div>
+                <span style="font-family:var(--font-mono);font-size:12px;color:var(--text-primary);min-width:44px;text-align:right">${values[i].toLocaleString()}</span>
+                <span style="font-size:10px;color:var(--text-muted);min-width:36px">${pct}%</span>
+            </div>`;
+        }).join('');
+    } catch {}
+}
+
+loadSeverityDonut();
+loadSourceTypes();
+loadDeviceHealth();
+
+/* ── Source Types Breakdown (#22) ─────────────────────── */
+async function loadSourceTypes() {
+    try {
+        const r = await fetch('/api/sources?page=1&pageSize=200');
+        if (!r.ok) return;
+        const d = await r.json();
+        const sources = d.items ?? [];
+
+        // Group by device type
+        const typeMap = {};
+        sources.forEach(s => {
+            const t = s.deviceType || 'Other';
+            if (!typeMap[t]) typeMap[t] = { total: 0, online: 0, eps: 0 };
+            typeMap[t].total++;
+            if (s.status === 'Online') typeMap[t].online++;
+            typeMap[t].eps += (s.currentEps || 0);
+        });
+
+        const typeColors = { Firewall:'#ff3b5c', Router:'#ff6b35', Switch:'#ffcd47', Linux:'#2ecc71', Windows:'#4895ef', 'IDS/IPS':'#b57bee', Other:'#7b8fa6' };
+        const cards = Object.entries(typeMap).sort((a,b) => b[1].total - a[1].total).map(([type, info]) => {
+            const color = typeColors[type] || '#7b8fa6';
+            const healthPct = info.total > 0 ? Math.round(info.online / info.total * 100) : 0;
+            return `<div style="background:var(--bg-elevated);border:1px solid var(--border);border-radius:8px;padding:12px;border-left:3px solid ${color}">
+                <div style="font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:${color};margin-bottom:6px">${type}</div>
+                <div style="font-size:20px;font-weight:700;color:var(--text-primary);font-family:var(--font-display)">${info.total}</div>
+                <div style="font-size:11px;color:var(--text-muted);margin-top:4px">${info.online} online · ${info.eps} EPS</div>
+                <div style="height:3px;background:var(--border);border-radius:2px;margin-top:8px;overflow:hidden">
+                    <div style="height:100%;width:${healthPct}%;background:${color};border-radius:2px;transition:width 0.5s"></div>
+                </div>
+            </div>`;
+        }).join('');
+
+        document.getElementById('sourceTypesGrid').innerHTML = cards || '<div style="color:var(--text-muted);font-size:12px">No sources configured.</div>';
+    } catch {}
+}
+
+function esc(s) { var d = document.createElement('div'); d.textContent = s ?? ''; return d.innerHTML; }
+
+/* ── Device Health (#23) ───────────────────────────────── */
+async function loadDeviceHealth() {
+    try {
+        const r = await fetch('/api/sources?page=1&pageSize=100');
+        if (!r.ok) return;
+        const d = await r.json();
+        const sources = d.items ?? [];
+
+        if (!sources.length) { document.getElementById('deviceHealthGrid').innerHTML = '<div style="color:var(--text-muted);font-size:12px">No sources.</div>'; return; }
+
+        const online   = sources.filter(s => s.status === 'Online').length;
+        const offline  = sources.filter(s => s.status === 'Offline').length;
+        const degraded = sources.filter(s => s.status === 'Degraded').length;
+        document.getElementById('deviceHealthSub').textContent = online + ' healthy · ' + (offline + degraded) + ' issues';
+
+        const statusColor = { Online:'#2ecc71', Offline:'#ff3b5c', Degraded:'#ffcd47', Pending:'#7b8fa6' };
+        const dots = sources.map(s => {
+            const color = statusColor[s.status] || '#7b8fa6';
+            return `<div title="${esc(s.name)} (${esc(s.ipAddress)}) — ${esc(s.status)}" style="width:36px;height:36px;border-radius:6px;background:var(--bg-elevated);border:1px solid ${color}40;display:flex;align-items:center;justify-content:center;cursor:default;position:relative" data-tip="${esc(s.name)} · ${esc(s.status)}" onmouseenter="showDeviceTip(this, this.dataset.tip)" onmouseleave="hideDeviceTip()">
+                <div style="width:8px;height:8px;border-radius:50%;background:${color};box-shadow:0 0 6px ${color}"></div>
+            </div>`;
+        }).join('');
+        document.getElementById('deviceHealthGrid').innerHTML = dots;
+    } catch {}
+}
+
+function showDeviceTip(el, text) {
+    var tip = document.getElementById('deviceTip');
+    if (!tip) { tip = document.createElement('div'); tip.id = 'deviceTip'; tip.style.cssText = 'position:fixed;z-index:9999;background:var(--bg-elevated);border:1px solid var(--border);border-radius:6px;padding:6px 10px;font-size:11px;color:var(--text-primary);pointer-events:none;white-space:nowrap'; document.body.appendChild(tip); }
+    tip.textContent = text;
+    var rect = el.getBoundingClientRect();
+    tip.style.left = rect.left + 'px';
+    tip.style.top  = (rect.top - 32) + 'px';
+    tip.style.display = 'block';
+}
+function hideDeviceTip() { var t = document.getElementById('deviceTip'); if (t) t.style.display = 'none'; }
+
+/* ── Incident + ThreatIntel + Anomaly summary widgets ──── */
+(async function loadSecurityWidgets() {
+    try {
+        const [incR, tiR, anR] = await Promise.all([
+            fetch('/api/incidents/summary'),
+            fetch('/api/threat-intel/summary'),
+            fetch('/api/anomaly/summary')
+        ]);
+
+        const container = document.getElementById('securityWidgetsRow');
+        if (!container) return;
+
+        let html = '';
+
+        if (incR.ok) {
+            const d = await incR.json();
+            html += `<div style="background:var(--bg-elevated);border:1px solid var(--border);border-radius:8px;padding:14px;border-left:3px solid var(--sev-error)">
+                <div style="font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--sev-error);margin-bottom:6px">Open Incidents</div>
+                <div style="font-size:22px;font-weight:700;color:var(--text-primary)">${d.totalOpen ?? 0}</div>
+                <div style="font-size:11px;color:var(--text-muted);margin-top:4px">
+                    ${d.totalCritical > 0 ? `<span style="color:var(--sev-emerg)">${d.totalCritical} Critical · </span>` : ''}
+                    ${d.totalHigh > 0 ? `<span style="color:var(--sev-error)">${d.totalHigh} High · </span>` : ''}
+                    ${d.totalResolved ?? 0} resolved
+                </div>
+                <a href="/incidents" style="font-size:11px;color:var(--accent-cyan);text-decoration:none">View Incidents →</a>
+            </div>`;
+        }
+
+        if (tiR.ok) {
+            const d = await tiR.json();
+            html += `<div style="background:var(--bg-elevated);border:1px solid var(--border);border-radius:8px;padding:14px;border-left:3px solid var(--sev-warning)">
+                <div style="font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--sev-warning);margin-bottom:6px">Threat Intel</div>
+                <div style="font-size:22px;font-weight:700;color:var(--text-primary)">${d.activeIndicators ?? 0} <span style="font-size:13px;font-weight:400;color:var(--text-muted)">active IOCs</span></div>
+                <div style="font-size:11px;color:var(--text-muted);margin-top:4px">
+                    ${d.ipIndicators ?? 0} IPs · ${d.domainIndicators ?? 0} Domains · ${d.hashIndicators ?? 0} Hashes
+                </div>
+                <a href="/threat-intel" style="font-size:11px;color:var(--accent-cyan);text-decoration:none">Manage IOCs →</a>
+            </div>`;
+        }
+
+        if (anR.ok) {
+            const d = await anR.json();
+            html += `<div style="background:var(--bg-elevated);border:1px solid var(--border);border-radius:8px;padding:14px;border-left:3px solid var(--accent-cyan)">
+                <div style="font-size:11px;text-transform:uppercase;letter-spacing:.5px;color:var(--accent-cyan);margin-bottom:6px">Anomaly Detection</div>
+                <div style="font-size:22px;font-weight:700;color:var(--text-primary)">${d.unacknowledgedEvents ?? 0} <span style="font-size:13px;font-weight:400;color:var(--text-muted)">unack events</span></div>
+                <div style="font-size:11px;color:var(--text-muted);margin-top:4px">
+                    ${d.enabledRules ?? 0} active rules · ${d.eventsToday ?? 0} fired today
+                </div>
+                <a href="/anomaly" style="font-size:11px;color:var(--accent-cyan);text-decoration:none">View Anomalies →</a>
+            </div>`;
+        }
+
+        container.innerHTML = html;
+    } catch {}
+})();
+</script>
+}

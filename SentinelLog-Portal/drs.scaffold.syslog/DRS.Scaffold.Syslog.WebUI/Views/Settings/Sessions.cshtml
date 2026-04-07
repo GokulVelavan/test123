@@ -1,0 +1,100 @@
+@{
+    Layout = "_AppLayout";
+    ViewData["Title"] = "Settings — Active Sessions";
+    ViewData["TopbarMeta"] = "View and terminate active user sessions";
+}
+@await Html.PartialAsync("_SettingsNav")
+<div style="padding:20px;display:flex;flex-direction:column;gap:16px">
+
+    <div class="panel">
+        <div class="panel-header">
+            <div class="panel-title">Active Sessions</div>
+            <div class="panel-controls">
+                <button class="btn btn-sm" style="border:1px solid var(--sev-error);color:var(--sev-error);background:transparent" onclick="revokeAll()">&#x26A0; Revoke All Sessions</button>
+                <button class="btn btn-sm" style="border:1px solid var(--border);color:var(--text-secondary);background:transparent;margin-left:6px" onclick="loadSessions()">&#x21BB; Refresh</button>
+            </div>
+        </div>
+        <div style="padding:10px 16px;font-size:12px;color:var(--text-muted);border-bottom:1px solid var(--border)">
+            Shows all currently valid refresh-token sessions. Revoking a session forces the user to log in again.
+        </div>
+        <table class="data-table">
+            <thead>
+                <tr>
+                    <th>User</th>
+                    <th>IP Address</th>
+                    <th>User Agent / Browser</th>
+                    <th>Started</th>
+                    <th>Expires</th>
+                    <th>Actions</th>
+                </tr>
+            </thead>
+            <tbody id="sessionsTbody">
+                <tr><td colspan="6" style="color:var(--text-muted);text-align:center">Loading…</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+</div>
+
+@section Scripts {
+<script>
+function esc(s) { var d = document.createElement('div'); d.textContent = String(s ?? ''); return d.innerHTML; }
+
+async function loadSessions() {
+    const tbody = document.getElementById('sessionsTbody');
+    try {
+        const r = await fetch('/api/settings/sessions');
+        if (!r.ok) { tbody.innerHTML = `<tr><td colspan="6" style="color:var(--sev-error);text-align:center">Failed to load.</td></tr>`; return; }
+        const items = await r.json();
+        if (!items.length) {
+            tbody.innerHTML = `<tr><td colspan="6" style="color:var(--text-muted);text-align:center">No active sessions.</td></tr>`;
+            return;
+        }
+        tbody.innerHTML = items.map(s => {
+            const ua = s.userAgent || '—';
+            const browser = ua.includes('Chrome') ? 'Chrome' : ua.includes('Firefox') ? 'Firefox' : ua.includes('Safari') ? 'Safari' : ua.includes('Edge') ? 'Edge' : ua.substring(0, 40);
+            const expiresAt = new Date(s.expiresAt);
+            const isExpiringSoon = (expiresAt - Date.now()) < 3600_000;
+            return `<tr>
+                <td>
+                    <div style="font-weight:500;color:var(--text-primary)">${esc(s.username)}</div>
+                    ${s.fullName ? `<div style="font-size:11px;color:var(--text-muted)">${esc(s.fullName)}</div>` : ''}
+                </td>
+                <td class="mono" style="font-size:12px;color:var(--accent-cyan)">${esc(s.ipAddress || '—')}</td>
+                <td style="font-size:12px;color:var(--text-secondary);max-width:280px;overflow:hidden;text-overflow:ellipsis" title="${esc(ua)}">${esc(browser)}</td>
+                <td class="mono" style="font-size:11px;color:var(--text-muted)">${new Date(s.createdAt).toLocaleString()}</td>
+                <td class="mono" style="font-size:11px;color:${isExpiringSoon ? 'var(--sev-warning)' : 'var(--text-muted)'}">${expiresAt.toLocaleString()}</td>
+                <td>
+                    <button class="btn btn-sm" style="font-size:11px;padding:3px 8px;background:transparent;border:1px solid var(--sev-error);color:var(--sev-error)" onclick="revokeSession(${s.id})">Revoke</button>
+                    <button class="btn btn-sm" style="font-size:11px;padding:3px 8px;background:transparent;border:1px solid var(--border);color:var(--text-muted);margin-left:4px" onclick="revokeUser(${s.userId})">Revoke All (User)</button>
+                </td>
+            </tr>`;
+        }).join('');
+    } catch { tbody.innerHTML = `<tr><td colspan="6" style="color:var(--sev-error);text-align:center">Network error.</td></tr>`; }
+}
+
+async function revokeSession(id) {
+    if (!confirm(`Revoke session #${id}? The user will be logged out.`)) return;
+    await fetch(`/api/settings/sessions/${id}`, { method: 'DELETE' });
+    loadSessions();
+}
+
+async function revokeUser(userId) {
+    if (!confirm(`Revoke ALL sessions for this user? They will be logged out immediately.`)) return;
+    await fetch(`/api/settings/sessions/user/${userId}`, { method: 'DELETE' });
+    loadSessions();
+}
+
+async function revokeAll() {
+    if (!confirm('Revoke ALL active sessions? Every user will be forced to log in again.')) return;
+    const r = await fetch('/api/settings/sessions');
+    if (!r.ok) return;
+    const items = await r.json();
+    await Promise.all(items.map(s => fetch(`/api/settings/sessions/${s.id}`, { method: 'DELETE' })));
+    loadSessions();
+}
+
+loadSessions();
+setInterval(loadSessions, 30000);
+</script>
+}

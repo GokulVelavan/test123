@@ -1,0 +1,198 @@
+@{
+    Layout = "_AppLayout";
+    ViewData["Title"] = "Settings &middot; License";
+    ViewData["TopbarMeta"] = "Platform license and subscription information";
+}
+@await Html.PartialAsync("_SettingsNav")
+<div style="padding:20px;display:flex;flex-direction:column;gap:16px">
+    <div class="metrics-row" style="grid-template-columns:repeat(3,1fr)">
+        <div class="metric-card cyan">
+            <div class="metric-label">Plan</div>
+            <div class="metric-value" style="font-size:20px" id="kpiPlan">—</div>
+        </div>
+        <div class="metric-card blue">
+            <div class="metric-label">Max Sources</div>
+            <div class="metric-value" style="font-size:20px" id="kpiMaxSources">—</div>
+        </div>
+        <div class="metric-card green">
+            <div class="metric-label">Status</div>
+            <div class="metric-value" style="font-size:20px" id="kpiLicStatus">—</div>
+        </div>
+    </div>
+    <div class="panel" id="licenseDetailsPanel" style="display:none">
+        <div class="panel-header">
+            <div class="panel-title">License Details</div>
+            <div class="panel-controls">
+                <button class="btn btn-sm" style="color:var(--sev-error);background:transparent;border:1px solid var(--sev-error)" id="deactivateBtn" onclick="deactivateLicense()">Deactivate</button>
+            </div>
+        </div>
+        <div style="padding:1.25rem 1.5rem;display:grid;grid-template-columns:1fr 1fr;gap:1.5rem 2rem">
+            <div>
+                <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Licensee</div>
+                <div style="font-size:13px;color:var(--text-1)" id="licLicensee">—</div>
+            </div>
+            <div>
+                <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Expires</div>
+                <div style="font-size:13px;color:var(--sev-notice)" id="licExpires">—</div>
+            </div>
+            <div>
+                <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Plan</div>
+                <div style="font-size:13px;color:var(--text-1)" id="licPlan">—</div>
+            </div>
+            <div>
+                <div style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px;margin-bottom:4px">Max Sources / EPS</div>
+                <div class="mono" style="font-size:12px;color:var(--text-2)" id="licLimits">—</div>
+            </div>
+        </div>
+    </div>
+
+    <!-- Activate license form (shown when no active license) -->
+    <div class="panel" id="activatePanel">
+        <div class="panel-header"><div class="panel-title">Activate License</div></div>
+        <div style="padding:1.25rem 1.5rem;display:flex;flex-direction:column;gap:14px">
+            <div id="activateAlert" class="alert-bar" style="display:none"></div>
+            <div class="form-row">
+                <label class="form-label">License Key *</label>
+                <input class="form-input" id="activateLicenseKey" placeholder="XXXX-XXXX-XXXX-XXXX" style="max-width:400px">
+            </div>
+            <div class="form-row">
+                <label class="form-label">Licensee Name</label>
+                <input class="form-input" id="activateLicensee" placeholder="Your company name" style="max-width:400px">
+            </div>
+            <div>
+                <button class="btn btn-accent btn-sm" id="activateBtn" onclick="activateLicense()">Activate License</button>
+            </div>
+        </div>
+    </div>
+
+    <div class="panel">
+        <div class="panel-header"><div class="panel-title">Usage</div></div>
+        <div style="padding:1.25rem 1.5rem;display:flex;flex-direction:column;gap:1.25rem" id="licenseUsage">
+            <!-- Sources -->
+            <div>
+                <div style="display:flex;justify-content:space-between;margin-bottom:2px">
+                    <span style="font-size:12px;color:var(--text-2)">Log Sources</span>
+                    <span class="mono" id="usageSrcLabel" style="font-size:12px;color:var(--text-muted)">— / 1,000</span>
+                </div>
+                <div class="license-usage-bar"><div class="license-usage-fill" id="usageSrcBar" style="width:0%;background:var(--accent-cyan)"></div></div>
+            </div>
+            <!-- EPS -->
+            <div>
+                <div style="display:flex;justify-content:space-between;margin-bottom:2px">
+                    <span style="font-size:12px;color:var(--text-2)">Events / Second (EPS)</span>
+                    <span class="mono" id="usageEpsLabel" style="font-size:12px;color:var(--text-muted)">— / 5,000</span>
+                </div>
+                <div class="license-usage-bar"><div class="license-usage-fill" id="usageEpsBar" style="width:0%;background:var(--sev-warning)"></div></div>
+            </div>
+            <!-- Storage -->
+            <div>
+                <div style="display:flex;justify-content:space-between;margin-bottom:2px">
+                    <span style="font-size:12px;color:var(--text-2)">Primary Storage</span>
+                    <span class="mono" id="usageStgLabel" style="font-size:12px;color:var(--text-muted)">— / 100 TB</span>
+                </div>
+                <div class="license-usage-bar"><div class="license-usage-fill" id="usageStgBar" style="width:0%;background:var(--sev-info)"></div></div>
+            </div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+var activeLicenseId = null;
+var _licMaxSources  = null;
+var _licMaxEps      = null;
+
+function pct(v, max) { return max > 0 ? Math.min(100, Math.round(v / max * 100)) : 0; }
+function setBar(barId, lblId, used, max, unit) {
+    var p = pct(used, max);
+    var bar = document.getElementById(barId); if (bar) bar.style.width = p + '%';
+    var lbl = document.getElementById(lblId); if (lbl) lbl.textContent = (used?.toLocaleString() ?? 0) + ' / ' + (max?.toLocaleString() ?? 0) + (unit ? ' ' + unit : '');
+}
+
+async function loadLicense() {
+    try {
+        const r = await fetch('/api/license');
+        if (r.status === 204 || !r.ok) {
+            // no active license
+            document.getElementById('licenseDetailsPanel').style.display = 'none';
+            document.getElementById('activatePanel').style.display = '';
+            document.getElementById('kpiPlan').textContent      = '—';
+            document.getElementById('kpiMaxSources').textContent = '—';
+            document.getElementById('kpiLicStatus').textContent  = 'None';
+            document.getElementById('kpiLicStatus').style.color  = 'var(--text-muted)';
+            return;
+        }
+        const lic = await r.json();
+        activeLicenseId = lic.id;
+        _licMaxSources  = lic.maxSources ?? 1000;
+        _licMaxEps      = lic.maxEps     ?? 5000;
+        document.getElementById('licenseDetailsPanel').style.display = '';
+        document.getElementById('activatePanel').style.display = 'none';
+        document.getElementById('licLicensee').textContent = lic.licensee  ?? '—';
+        document.getElementById('licExpires').textContent  = lic.expiresAt ? new Date(lic.expiresAt).toLocaleDateString() : 'Never';
+        document.getElementById('licPlan').textContent     = lic.plan      ?? '—';
+        document.getElementById('licLimits').textContent   = (lic.maxSources?.toLocaleString() ?? '—') + ' sources / ' + (lic.maxEps?.toLocaleString() ?? '—') + ' EPS';
+        document.getElementById('kpiPlan').textContent       = lic.plan          ?? '—';
+        document.getElementById('kpiMaxSources').textContent = lic.maxSources?.toLocaleString() ?? '—';
+        document.getElementById('kpiLicStatus').textContent  = lic.isActive ? 'Active' : 'Inactive';
+        document.getElementById('kpiLicStatus').style.color  = lic.isActive ? 'var(--sev-notice)' : 'var(--sev-error)';
+    } catch (_) {}
+}
+
+async function loadUsage(maxSrc, maxEps) {
+    try {
+        const [srcRes, stgRes] = await Promise.all([fetch('/api/sources/summary'), fetch('/api/settings/storage')]);
+        if (srcRes.ok) {
+            const s = await srcRes.json();
+            setBar('usageSrcBar', 'usageSrcLabel', s.totalSources ?? 0, maxSrc ?? 1000, '');
+            setBar('usageEpsBar', 'usageEpsLabel', s.totalEps    ?? 0, maxEps ?? 5000, '');
+        }
+        if (stgRes.ok) {
+            const st = await stgRes.json();
+            setBar('usageStgBar', 'usageStgLabel', parseFloat(st.primaryStorageUsedTb ?? 0).toFixed(1), 100, 'TB');
+        }
+    } catch (_) {}
+}
+
+async function activateLicense() {
+    const key      = document.getElementById('activateLicenseKey').value.trim();
+    const licensee = document.getElementById('activateLicensee').value.trim();
+    if (!key) { showActivateAlert('error', 'License key is required.'); return; }
+    const btn = document.getElementById('activateBtn');
+    btn.disabled = true; btn.textContent = 'Activating…';
+    try {
+        const r = await fetch('/api/license/activate', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ licenseKey: key, licensee: licensee || null })
+        });
+        if (!r.ok) { const t = await r.text(); showActivateAlert('error', t || 'Activation failed.'); return; }
+        await loadLicense();
+        showActivateAlert('success', 'License activated successfully.');
+    } catch { showActivateAlert('error', 'Network error.'); }
+    finally { btn.disabled = false; btn.textContent = 'Activate License'; }
+}
+
+function showActivateAlert(type, msg) {
+    const el = document.getElementById('activateAlert');
+    el.className = 'alert-bar ' + type;
+    el.textContent = msg;
+    el.style.display = 'flex';
+}
+
+async function deactivateLicense() {
+    if (!activeLicenseId) return;
+    if (!confirm('Deactivate the current license? The platform will run in unlicensed mode.')) return;
+    try {
+        const r = await fetch('/api/license/' + activeLicenseId, { method: 'DELETE' });
+        if (!r.ok) { alert('Failed to deactivate license.'); return; }
+        activeLicenseId = null;
+        loadLicense();
+    } catch { alert('Network error.'); }
+}
+
+(async function () {
+    await loadLicense();
+    await loadUsage(_licMaxSources ?? 1000, _licMaxEps ?? 5000);
+})();
+</script>
+}

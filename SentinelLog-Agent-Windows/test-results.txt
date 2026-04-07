@@ -1,0 +1,76 @@
+﻿
+========================================
+ SyslogAgent Event Generation Test
+ Started: 2026-03-17 18:58:14
+========================================
+
+
+--- Application Log ---
+[Application] Error event ID 1000 (app crash) ... GENERATED
+[Application] Warning event ID 1001 (app issue) ... GENERATED
+[Application] Error event ID 1026 (.NET runtime) ... GENERATED
+
+--- System Log ---
+[System] Stop/Start Spooler (triggers 7035/7036) ... GENERATED
+[System] Restart W32Time (triggers 7035/7036) ... GENERATED
+
+--- Security Log ---
+[Security] Failed logon (triggers 4625/4648) ... GENERATED
+[Security] whoami /priv (triggers 4624/4672) ... GENERATED
+
+--- PowerShell Operational ---
+[PowerShell] Script block execution (triggers 4104) ... GENERATED
+[PowerShell] Import module (triggers 4103) ... GENERATED
+
+--- Task Scheduler Operational ---
+[TaskScheduler] Create/run/delete task (106/200/201/141) ... GENERATED
+
+--- Windows Defender Operational ---
+[Defender] EICAR test file (triggers 1116/1117) ... GENERATED
+
+--- Windows Firewall ---
+[Firewall] Add/modify/remove rule (2004/2005/2006) ... GENERATED
+
+--- Sysmon ---
+[Sysmon] NOT INSTALLED - skipping
+
+--- DNS Client Operational ---
+[DNS-Client] Successful DNS query (3006/3020) ... GENERATED
+[DNS-Client] Failed DNS query (3008) ... GENERATED
+
+--- Terminal Services / RDP ---
+  (RDP service not running)
+[RDP] Query RDP operational log ... GENERATED
+
+--- WMI Activity ---
+[WMI] WMI query (triggers 5857 provider load) ... GENERATED
+
+--- BITS Client ---
+[BITS] BITS transfer (triggers 3/4/59/60) ... GENERATED
+
+========================================
+ TEST RESULTS SUMMARY
+========================================
+[PASS] Application: Error event ID 1000 (app crash)
+[PASS] Application: Warning event ID 1001 (app issue)
+[PASS] Application: Error event ID 1026 (.NET runtime)
+[PASS] System: Stop/Start Spooler (triggers 7035/7036)
+[PASS] System: Restart W32Time (triggers 7035/7036)
+[PASS] Security: Failed logon (triggers 4625/4648)
+[PASS] Security: whoami /priv (triggers 4624/4672)
+[PASS] PowerShell: Script block execution (triggers 4104)
+[PASS] PowerShell: Import module (triggers 4103)
+[PASS] TaskScheduler: Create/run/delete task (106/200/201/141)
+[PASS] Defender: EICAR test file (triggers 1116/1117)
+[PASS] Firewall: Add/modify/remove rule (2004/2005/2006)
+[SKIP] Sysmon: Not installed
+[PASS] DNS-Client: Successful DNS query (3006/3020)
+[PASS] DNS-Client: Failed DNS query (3008)
+[PASS] RDP: Query RDP operational log
+[PASS] WMI: WMI query (triggers 5857 provider load)
+[PASS] BITS: BITS transfer (triggers 3/4/59/60)
+
+Total: 18 | OK: 17 | Failed: 0 | Skipped: 
+
+Check your SyslogAgent Dashboard to verify these events were captured.
+Events should appear within BatchIntervalSeconds (60s) from appsettings.json.

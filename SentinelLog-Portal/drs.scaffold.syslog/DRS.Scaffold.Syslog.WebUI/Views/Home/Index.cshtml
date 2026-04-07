@@ -1,0 +1,196 @@
+﻿@model HomepageViewModel
+@{
+    Layout = "_Layout";
+    ViewData["Title"] = "Sign In";
+
+    // Format helpers
+    string FmtEvents(long n) => n >= 1_000_000 ? $"{n / 1_000_000.0:F1}M"
+                              : n >= 1_000      ? $"{n / 1_000.0:F1}K"
+                              : n.ToString();
+    string FmtRatio(double r) => r > 0 ? $"{r:F1}:1" : "—";
+    string FmtEps(decimal eps) => eps > 0 ? eps.ToString("F1") : "—";
+}
+<div class="scan-line"></div>
+<nav>
+    <a class="nav-logo" href="/"><div class="nav-logo-mark">&#x26A1;</div><div class="nav-logo-text">Sentinel<span>Log</span></div></a>
+    <div class="nav-links">
+        <a class="nav-link" href="#features">Features</a>
+        <a class="nav-link" href="#platform">Platform</a>
+        <a class="nav-link" href="#security">Security</a>
+    </div>
+    <button class="nav-cta" onclick="scrollToLogin()">Sign In &#x2192;</button>
+</nav>
+
+<section class="hero">
+  <div class="hero-inner">
+    <!-- Left copy -->
+    <div>
+      <div class="hero-eyebrow"><div class="eyebrow-dot"></div><span class="eyebrow-text">Enterprise Syslog Intelligence Platform</span></div>
+      <h1 class="hero-title">Every log.<br>Every device.<br><span class="hl" data-text="Zero blind spots.">Zero blind spots.</span></h1>
+      <p class="hero-sub">Centralized, real-time syslog collection from routers, firewalls, Windows servers, Linux hosts, SNMP traps, and IEC 61850 substations — with intelligent alerting and forensic search built for NOC and SOC teams.</p>
+      <div class="hero-actions">
+        <button class="btn-primary" onclick="scrollToLogin()">Access Platform &#x2192;</button>
+        <button class="btn-secondary">&#x25B6; Watch Demo</button>
+      </div>
+      <div class="hero-meta">
+        <div class="hero-stat"><div class="hero-stat-val">5,000<span>+</span></div><div class="hero-stat-label">EPS capacity</div></div>
+        <div style="width:1px;background:var(--border-mid)"></div>
+        <div class="hero-stat"><div class="hero-stat-val">100<span>TB</span></div><div class="hero-stat-label">Archive storage</div></div>
+        <div style="width:1px;background:var(--border-mid)"></div>
+        <div class="hero-stat"><div class="hero-stat-val">&lt;2<span>s</span></div><div class="hero-stat-label">Alert latency</div></div>
+        <div style="width:1px;background:var(--border-mid)"></div>
+        <div class="hero-stat"><div class="hero-stat-val">NERC<span> CIP</span></div><div class="hero-stat-label">Compliant</div></div>
+      </div>
+    </div>
+
+    <!-- Login Card -->
+    <div id="loginSection">
+      <div class="login-card">
+        <div class="login-header">
+          <div class="login-header-icon">&#x26A1;</div>
+          <div class="login-header-text">
+            <div class="login-title">@Model.PlatformName</div>
+            <div class="login-subtitle">@Model.Organization</div>
+          </div>
+          <div class="login-secure"><div class="secure-dot"></div>TLS 1.3</div>
+        </div>
+
+        <div class="login-body" id="loginBody">
+          @if (Model.Error is not null)
+          {
+            <div class="alert-bar error"><span>&#x26A0;</span> @Model.Error</div>
+          }
+          else
+          {
+            <div class="alert-bar error" id="errorBar" style="display:none"><span>&#x26A0;</span> Invalid credentials.</div>
+          }
+
+          <form asp-controller="Auth" asp-action="Login" method="post" id="loginForm">
+            @Html.AntiForgeryToken()
+            <div class="login-field">
+              <label class="login-label">Username or Email</label>
+              <div class="login-input-wrap">
+                <span class="login-input-icon">&#x25CE;</span>
+                <input class="login-input" asp-for="Username" type="text" placeholder="user@organization.corp" autocomplete="username">
+              </div>
+            </div>
+            <div class="login-field">
+              <label class="login-label">Password</label>
+              <div class="login-input-wrap">
+                <span class="login-input-icon">&#x1F512;</span>
+                <input class="login-input" asp-for="Password" type="password" id="passwordInput" placeholder="••••••••••••" autocomplete="current-password">
+                <span class="login-input-eye" onclick="togglePwd()" id="eyeIcon">&#x1F441;</span>
+              </div>
+            </div>
+            <div class="login-options">
+              <label class="remember-wrap"><input asp-for="RememberMe" type="checkbox"><span class="remember-label">Remember this device</span></label>
+              <a class="forgot-link">Forgot password?</a>
+            </div>
+            <button type="submit" class="login-btn" id="loginBtn">
+              <span class="btn-text">Sign In to Platform</span>
+              <div class="spinner"></div>
+            </button>
+          </form>
+
+          <div class="login-divider">or</div>
+          <button class="sso-btn"><span style="font-size:15px">&#x1F3E2;</span> Sign in with Active Directory SSO</button>
+        </div>
+
+        <!-- MFA screen -->
+        <div class="mfa-screen" id="mfaScreen">
+          <div class="mfa-icon">&#x1F510;</div>
+          <div class="mfa-title">Two-Factor Authentication</div>
+          <div class="mfa-sub">Enter the 6-digit code from your authenticator app.</div>
+          <div class="otp-wrap">
+            <input class="otp-input" id="otp0" maxlength="1" type="text" inputmode="numeric">
+            <input class="otp-input" id="otp1" maxlength="1" type="text" inputmode="numeric">
+            <input class="otp-input" id="otp2" maxlength="1" type="text" inputmode="numeric">
+            <input class="otp-input" id="otp3" maxlength="1" type="text" inputmode="numeric">
+            <input class="otp-input" id="otp4" maxlength="1" type="text" inputmode="numeric">
+            <input class="otp-input" id="otp5" maxlength="1" type="text" inputmode="numeric">
+          </div>
+          <div class="alert-bar success" id="mfaSuccess" style="display:none"><span>&#x2713;</span> Verified — redirecting…</div>
+          <div class="alert-bar error"   id="mfaError"   style="display:none"><span>&#x26A0;</span> Invalid code.</div>
+          <button class="login-btn" id="mfaBtn" onclick="handleMFA()">
+            <span class="btn-text">Verify &amp; Continue</span><div class="spinner"></div>
+          </button>
+          <div style="text-align:center">
+            <a class="forgot-link" style="font-size:12px" onclick="backToLogin()">&#x2190; Back</a>
+          </div>
+        </div>
+
+        <div class="login-footer">
+          <div class="login-footer-text">@Model.PlatformName</div>
+          <div class="login-footer-links"><a class="footer-link">Privacy</a><a class="footer-link">Terms</a><a class="footer-link">Support</a></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</section>
+
+<div class="ticker-section">
+  <div class="ticker-header">
+    <div class="ticker-label">Live event stream · platform-wide</div>
+    <div class="ticker-live"><div class="eyebrow-dot"></div> LIVE</div>
+  </div>
+  <div class="ticker-wrap"><div class="ticker-track" id="tickerTrack"></div></div>
+</div>
+
+<div class="stats-bar">
+  <div class="stats-inner">
+    <div class="stat-block">
+      <div class="stat-number" id="statEps">@FmtEps(Model.EpsNow)</div>
+      <div class="stat-label">Events per second</div>
+      <div class="stat-sub">Live ingestion rate</div>
+    </div>
+    <div class="stat-block">
+      <div class="stat-number" id="statSources">@(Model.ActiveSources > 0 ? Model.ActiveSources.ToString() : "—")</div>
+      <div class="stat-label">Active log sources</div>
+      <div class="stat-sub">Across all source types</div>
+    </div>
+    <div class="stat-block">
+      <div class="stat-number" id="statEvents">@FmtEvents(Model.TotalEventsToday)</div>
+      <div class="stat-label">Events today</div>
+      <div class="stat-sub" id="statEventsSub">Live ingestion total</div>
+    </div>
+    <div class="stat-block">
+      <div class="stat-number" id="statCompression">@FmtRatio(Model.CompressionRatio)</div>
+      <div class="stat-label">Compression ratio</div>
+      <div class="stat-sub">LZ4 + Zstandard</div>
+    </div>
+  </div>
+</div>
+
+<section class="features" id="features">
+  <div class="section-label">Capabilities</div>
+  <h2 class="section-title">Built for critical<br>infrastructure teams.</h2>
+  <p class="section-sub">Purpose-built for power utilities, industrial networks, and enterprise environments.</p>
+  <div class="features-grid">
+    <div class="feature-card"><div class="feature-icon" style="background:rgba(0,212,255,0.1)">&#x1F4E5;</div><div class="feature-name">Universal Log Collection</div><div class="feature-desc">Syslog UDP/TCP/TLS, SNMP Traps, Windows Event Log, Linux agents, IEC 61850 MMS.</div><span class="feature-tag" style="background:rgba(0,212,255,0.08);color:var(--cyan);border:1px solid rgba(0,212,255,0.2)">316 source types</span></div>
+    <div class="feature-card"><div class="feature-icon" style="background:rgba(255,59,92,0.1)">&#x26A1;</div><div class="feature-name">Real-time Alerting</div><div class="feature-desc">Sub-2-second alert delivery via Email, SNMP Trap, Webhook, and audible alarms.</div><span class="feature-tag" style="background:rgba(255,59,92,0.08);color:var(--red);border:1px solid rgba(255,59,92,0.2)">&lt;2s latency</span></div>
+    <div class="feature-card"><div class="feature-icon" style="background:rgba(6,214,160,0.1)">&#x1F50D;</div><div class="feature-name">Forensic Log Search</div><div class="feature-desc">Full-text search across billions of events in milliseconds.</div><span class="feature-tag" style="background:rgba(6,214,160,0.08);color:var(--green);border:1px solid rgba(6,214,160,0.2)">ms response time</span></div>
+    <div class="feature-card"><div class="feature-icon" style="background:rgba(255,209,102,0.1)">&#x1F4CA;</div><div class="feature-name">Trend Analytics</div><div class="feature-desc">Activity heatmaps, top talkers, per-severity trend lines, and scheduled PDF reports.</div><span class="feature-tag" style="background:rgba(255,209,102,0.08);color:var(--yellow);border:1px solid rgba(255,209,102,0.2)">NERC CIP ready</span></div>
+    <div class="feature-card"><div class="feature-icon" style="background:rgba(72,149,239,0.1)">&#x1F5C4;</div><div class="feature-name">Tiered Storage</div><div class="feature-desc">Hot/warm/cold tiers, configurable retention, 8.3:1 compression via LZ4 and Zstandard.</div><span class="feature-tag" style="background:rgba(72,149,239,0.08);color:#4895ef;border:1px solid rgba(72,149,239,0.2)">Up to 100 TB</span></div>
+    <div class="feature-card"><div class="feature-icon" style="background:rgba(0,102,255,0.1)">&#x1F512;</div><div class="feature-name">Enterprise Security</div><div class="feature-desc">TLS 1.3, mTLS, MFA, LDAP/AD sync, SAML 2.0 SSO, RBAC, immutable audit logging.</div><span class="feature-tag" style="background:rgba(0,102,255,0.08);color:#4895ef;border:1px solid rgba(0,102,255,0.2)">SOC 2 Type II</span></div>
+  </div>
+</section>
+
+<footer>
+  <div class="footer-logo"><div class="nav-logo-mark" style="width:24px;height:24px;font-size:12px;box-shadow:none">&#x26A1;</div><span style="font-family:var(--font-display);font-weight:800;font-size:13px;color:var(--text-2)">Sentinel<span style="color:var(--cyan)">Log</span></span></div>
+  <div class="footer-copy">&copy; @DateTime.UtcNow.Year @Model.PlatformName. All rights reserved.</div>
+  <div class="footer-links"><a class="footer-link">Documentation</a><a class="footer-link">API Reference</a><a class="footer-link">Privacy</a></div>
+  <div class="footer-badge"><div class="eyebrow-dot" style="width:5px;height:5px"></div> All systems operational</div>
+</footer>
+
+@section Scripts {
+<script>
+  // Expose server-rendered initial values so JS can skip a fetch on first load
+  window._homepageStats = {
+    eps:         @Model.EpsNow,
+    sources:     @Model.ActiveSources,
+    eventsToday: @Model.TotalEventsToday,
+    compression: @Model.CompressionRatio.ToString("F2", System.Globalization.CultureInfo.InvariantCulture)
+  };
+</script>
+<script src="~/js/homepage.js" asp-append-version="true"></script>
+}

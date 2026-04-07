@@ -1,0 +1,182 @@
+@{
+    Layout = "_AppLayout";
+    ViewData["Title"] = "Settings &middot; API Keys";
+    ViewData["TopbarMeta"] = "Manage API access tokens";
+}
+
+<!-- Create API Key Modal (#97-98) -->
+<div class="modal-overlay hidden" id="createKeyModal">
+    <div class="modal-box" style="max-width:440px">
+        <div class="modal-header">
+            <div class="modal-title">+ Create API Key</div>
+            <button class="modal-close" onclick="closeCreateKeyModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <div id="createKeyError" class="alert-bar error" style="display:none"><span>&#x26A0;</span> <span id="createKeyErrorMsg"></span></div>
+            <!-- Step 1: form -->
+            <div id="createKeyForm">
+                <div class="form-row">
+                    <label class="form-label">Key Name *</label>
+                    <input class="form-input" id="keyName" placeholder="e.g. SIEM Integration">
+                </div>
+                <div class="form-row">
+                    <label class="form-label">Description</label>
+                    <input class="form-input" id="keyDesc" placeholder="Optional description">
+                </div>
+                <div class="form-row">
+                    <label class="form-label">Expires At <span style="color:var(--text-muted);font-weight:400">(leave blank for no expiry)</span></label>
+                    <input class="form-input" id="keyExpiry" type="date">
+                </div>
+            </div>
+            <!-- Step 2: reveal key (hidden until creation) -->
+            <div id="createKeyReveal" style="display:none">
+                <div class="alert-bar success" style="margin-bottom:12px"><span>&#10003;</span> Key created — copy it now. It will not be shown again.</div>
+                <div style="background:var(--bg-1);border:1px solid var(--border);border-radius:6px;padding:12px;margin-bottom:8px">
+                    <code id="plainKeyText" style="font-size:12px;word-break:break-all;color:var(--accent-cyan)"></code>
+                </div>
+                <button class="btn btn-ghost btn-sm" onclick="copyApiKey()">Copy to Clipboard</button>
+            </div>
+        </div>
+        <div class="modal-footer" id="createKeyFooter">
+            <button class="btn btn-ghost btn-sm" onclick="closeCreateKeyModal()">Cancel</button>
+            <button class="btn btn-accent btn-sm" id="createKeyBtn" onclick="submitCreateKey()">Create Key</button>
+        </div>
+    </div>
+</div>
+
+@await Html.PartialAsync("_SettingsNav")
+<div style="padding:20px">
+    <div class="panel">
+        <div class="panel-header">
+            <div class="panel-title">API Keys</div>
+            <div class="panel-controls">
+                <button class="btn btn-accent btn-sm" onclick="openCreateKeyModal()">+ Create Key</button>
+            </div>
+        </div>
+        <div id="keysTable">
+            <div style="padding:1.5rem;color:var(--text-muted)">Loading&hellip;</div>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+function esc(s) { var d = document.createElement('div'); d.textContent = String(s ?? ''); return d.innerHTML; }
+function relTime(iso) {
+    if (!iso) return '—';
+    var diff = Math.floor((Date.now() - new Date(iso)) / 1000);
+    if (diff < 60)    return diff + 's ago';
+    if (diff < 3600)  return Math.floor(diff/60) + 'm ago';
+    if (diff < 86400) return Math.floor(diff/3600) + 'h ago';
+    return Math.floor(diff/86400) + 'd ago';
+}
+
+async function loadKeys() {
+    try {
+        const r = await fetch('/api/api-keys');
+        if (!r.ok) { document.getElementById('keysTable').innerHTML = '<div style="padding:1.5rem;color:var(--sev-error)">Failed to load keys.</div>'; return; }
+        const items = await r.json();
+        if (!items.length) {
+            document.getElementById('keysTable').innerHTML = '<div style="padding:1.5rem;color:var(--text-muted)">No API keys. Create one to allow programmatic access.</div>';
+            return;
+        }
+        const rows = items.map(k => `
+            <tr>
+                <td>
+                    <div style="font-weight:500">${esc(k.name)}</div>
+                    ${k.description ? '<div style="font-size:11px;color:var(--text-muted)">' + esc(k.description) + '</div>' : ''}
+                </td>
+                <td class="mono" style="color:var(--text-muted);font-size:12px">${esc(k.keyPrefix)}…</td>
+                <td>
+                    <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+                        <input type="checkbox" ${k.enabled ? 'checked' : ''} onchange="toggleKey(${k.id}, this.checked)">
+                        <span style="font-size:12px">${k.enabled ? '<span style="color:var(--sev-notice)">Active</span>' : '<span style="color:var(--text-muted)">Disabled</span>'}</span>
+                    </label>
+                </td>
+                <td class="mono" style="color:var(--text-muted);font-size:12px">${k.expiresAt ? new Date(k.expiresAt).toLocaleDateString() : 'Never'}</td>
+                <td class="mono" style="color:var(--text-muted);font-size:12px">${relTime(k.lastUsedAt)}</td>
+                <td class="mono" style="color:var(--text-muted);font-size:12px">${new Date(k.createdAt).toLocaleDateString()}</td>
+                <td style="text-align:right">
+                    <button class="btn btn-sm" style="color:var(--sev-error);background:transparent;border:1px solid var(--sev-error)" onclick="deleteKey(${k.id}, ${JSON.stringify(k.name)})">Revoke</button>
+                </td>
+            </tr>`).join('');
+        document.getElementById('keysTable').innerHTML = `
+            <table class="data-table">
+                <thead><tr>
+                    <th>Name</th><th>Prefix</th><th>Status</th>
+                    <th>Expires</th><th>Last Used</th><th>Created</th><th></th>
+                </tr></thead>
+                <tbody>${rows}</tbody>
+            </table>`;
+    } catch { document.getElementById('keysTable').innerHTML = '<div style="padding:1.5rem;color:var(--sev-error)">Network error.</div>'; }
+}
+
+function openCreateKeyModal() {
+    document.getElementById('createKeyError').style.display = 'none';
+    document.getElementById('keyName').value  = '';
+    document.getElementById('keyDesc').value  = '';
+    document.getElementById('keyExpiry').value = '';
+    document.getElementById('createKeyForm').style.display    = '';
+    document.getElementById('createKeyReveal').style.display  = 'none';
+    document.getElementById('createKeyFooter').style.display  = 'flex';
+    document.getElementById('createKeyModal').classList.remove('hidden');
+    document.getElementById('keyName').focus();
+}
+
+function closeCreateKeyModal() {
+    document.getElementById('createKeyModal').classList.add('hidden');
+    document.getElementById('plainKeyText').textContent = '';
+}
+
+async function submitCreateKey() {
+    const name = document.getElementById('keyName').value.trim();
+    if (!name) { document.getElementById('createKeyErrorMsg').textContent = 'Name is required.'; document.getElementById('createKeyError').style.display = 'flex'; return; }
+    const btn = document.getElementById('createKeyBtn');
+    btn.disabled = true; btn.textContent = 'Creating…';
+    try {
+        const payload = {
+            name,
+            description: document.getElementById('keyDesc').value.trim() || null,
+            expiresAt:   document.getElementById('keyExpiry').value || null
+        };
+        const r = await fetch('/api/api-keys', {
+            method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(payload)
+        });
+        if (!r.ok) { const t = await r.text(); document.getElementById('createKeyErrorMsg').textContent = t || 'Failed to create key.'; document.getElementById('createKeyError').style.display = 'flex'; return; }
+        const result = await r.json();
+        document.getElementById('plainKeyText').textContent = result.plainKey;
+        document.getElementById('createKeyForm').style.display   = 'none';
+        document.getElementById('createKeyReveal').style.display = '';
+        document.getElementById('createKeyFooter').innerHTML = '<button class="btn btn-accent btn-sm" onclick="closeCreateKeyModal()">Done</button>';
+        loadKeys();
+    } catch { document.getElementById('createKeyErrorMsg').textContent = 'Network error.'; document.getElementById('createKeyError').style.display = 'flex'; }
+    finally { btn.disabled = false; btn.textContent = 'Create Key'; }
+}
+
+function copyApiKey() {
+    const key = document.getElementById('plainKeyText').textContent;
+    navigator.clipboard.writeText(key)
+        .then(() => alert('Copied to clipboard!'))
+        .catch(() => alert('Copy failed — please copy the key manually.'));
+}
+
+async function toggleKey(id, enabled) {
+    try {
+        await fetch('/api/api-keys/' + id + '/toggle?enabled=' + enabled, { method: 'PATCH' });
+        loadKeys();
+    } catch {}
+}
+
+async function deleteKey(id, name) {
+    if (!confirm('Revoke API key "' + name + '"? Any integrations using this key will stop working.')) return;
+    try {
+        const r = await fetch('/api/api-keys/' + id, { method: 'DELETE' });
+        if (!r.ok) { alert('Failed to revoke key.'); return; }
+        loadKeys();
+    } catch { alert('Network error.'); }
+}
+
+document.getElementById('createKeyModal').addEventListener('click', function(e) { if (e.target === this) closeCreateKeyModal(); });
+loadKeys();
+</script>
+}

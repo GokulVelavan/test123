@@ -1,0 +1,294 @@
+@{
+    Layout = "_AppLayout";
+    ViewData["Title"] = "Anomaly Detection";
+    ViewData["TopbarMeta"] = "Baseline deviation detection — auto-detect unusual patterns";
+}
+<div style="padding:20px;display:flex;flex-direction:column;gap:16px">
+
+    @* ── KPI Summary ──────────────────────────────────────────────────────── *@
+    <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:12px">
+        <div class="kpi-card"><div class="kpi-label">Detection Rules</div><div class="kpi-value" id="kpiRules">—</div></div>
+        <div class="kpi-card"><div class="kpi-label">Enabled</div><div class="kpi-value" style="color:var(--sev-notice)" id="kpiEnabled">—</div></div>
+        <div class="kpi-card"><div class="kpi-label">Anomalies Today</div><div class="kpi-value" style="color:var(--sev-error)" id="kpiToday">—</div></div>
+        <div class="kpi-card"><div class="kpi-label">Unacknowledged</div><div class="kpi-value" style="color:var(--sev-warning)" id="kpiUnack">—</div></div>
+    </div>
+
+    @* ── Detection Rules ──────────────────────────────────────────────────── *@
+    <div class="panel">
+        <div class="panel-header">
+            <div class="panel-title">Detection Rules</div>
+            <div class="panel-controls">
+                <button class="btn btn-accent btn-sm" onclick="openRuleModal()">&#43; New Rule</button>
+            </div>
+        </div>
+        <table class="data-table">
+            <thead><tr><th>Name</th><th>Metric</th><th>Baseline Window</th><th>Threshold</th><th>Severity</th><th>Fired</th><th>Last Fired</th><th>Status</th><th>Actions</th></tr></thead>
+            <tbody id="rulesTbody"><tr><td colspan="9" style="color:var(--text-muted);text-align:center">Loading…</td></tr></tbody>
+        </table>
+    </div>
+
+    @* ── Anomaly Events ───────────────────────────────────────────────────── *@
+    <div class="panel">
+        <div class="panel-header">
+            <div class="panel-title">Anomaly Events</div>
+            <div class="panel-controls">
+                <select class="select-sm" id="filterAck" onchange="loadEvents()">
+                    <option value="">All</option>
+                    <option value="false">Unacknowledged</option>
+                    <option value="true">Acknowledged</option>
+                </select>
+            </div>
+        </div>
+        <table class="data-table">
+            <thead><tr><th>Time</th><th>Rule</th><th>Entity</th><th>Baseline</th><th>Observed</th><th>Deviation</th><th>Severity</th><th>Status</th><th>Action</th></tr></thead>
+            <tbody id="eventsTbody"><tr><td colspan="9" style="color:var(--text-muted);text-align:center">Loading…</td></tr></tbody>
+        </table>
+    </div>
+
+</div>
+
+@* ── Rule Modal ──────────────────────────────────────────────────────────────── *@
+<div class="modal-overlay hidden" id="ruleModal">
+    <div class="modal-box" style="max-width:560px">
+        <div class="modal-header">
+            <div class="modal-title" id="ruleModalTitle">New Anomaly Rule</div>
+            <button class="modal-close" onclick="closeRuleModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <div class="form-row">
+                <label class="form-label">Rule Name *</label>
+                <input class="form-input" id="rName" placeholder="e.g. EPS Spike Detection" />
+            </div>
+            <div class="form-row">
+                <label class="form-label">Detection Metric</label>
+                <select class="form-select" id="rMetric">
+                    <option value="EpsTotal">EPS Spike (Platform-wide)</option>
+                    <option value="EpsPerSource">EPS Spike (Per Source)</option>
+                    <option value="SeveritySpike">Severity Spike (Critical/Error rate)</option>
+                    <option value="NewSourceIp">New Unknown Source IP</option>
+                    <option value="AuthFailureRate">Auth Failure Rate Spike</option>
+                    <option value="SilentSource">Silent Source (stopped sending)</option>
+                </select>
+            </div>
+            <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:12px">
+                <div class="form-row">
+                    <label class="form-label">Baseline Window (min)</label>
+                    <input class="form-input" type="number" id="rWindow" value="60" min="5" max="1440" />
+                </div>
+                <div class="form-row">
+                    <label class="form-label">Threshold (×baseline)</label>
+                    <input class="form-input" type="number" id="rThreshold" value="3.0" min="1.1" max="100" step="0.1" />
+                </div>
+                <div class="form-row">
+                    <label class="form-label">Min Absolute Value</label>
+                    <input class="form-input" type="number" id="rMinVal" value="5" min="0" />
+                </div>
+            </div>
+            <div class="form-row">
+                <label class="form-label">Severity</label>
+                <select class="form-select" id="rSeverity">
+                    <option value="Critical">Critical</option>
+                    <option value="High" selected>High</option>
+                    <option value="Medium">Medium</option>
+                    <option value="Low">Low</option>
+                </select>
+            </div>
+            <div class="form-row">
+                <label class="form-label">Description</label>
+                <input class="form-input" id="rDesc" placeholder="What this rule detects…" />
+            </div>
+            <div style="display:flex;gap:20px">
+                <div class="toggle-wrap">
+                    <label class="toggle-switch"><input type="checkbox" id="rEnabled" checked><span class="toggle-slider"></span></label>
+                    <span class="form-label" style="text-transform:none;letter-spacing:0">Enabled</span>
+                </div>
+                <div class="toggle-wrap">
+                    <label class="toggle-switch"><input type="checkbox" id="rAutoIncident"><span class="toggle-slider"></span></label>
+                    <span class="form-label" style="text-transform:none;letter-spacing:0">Auto-create Incident</span>
+                </div>
+            </div>
+            <div style="background:var(--bg-base);border-radius:6px;padding:12px;font-size:12px;color:var(--text-muted)">
+                <strong style="color:var(--accent-cyan)">How it works:</strong> The worker evaluates the selected metric against a rolling baseline. If the current value exceeds <code>baseline × threshold</code> AND is above the minimum, an anomaly event fires.
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-ghost btn-sm" onclick="closeRuleModal()">Cancel</button>
+            <button class="btn btn-accent btn-sm" id="ruleSaveBtn" onclick="saveRule()">Create Rule</button>
+        </div>
+    </div>
+</div>
+
+@section Scripts {
+<script>
+function esc(s) { var d = document.createElement('div'); d.textContent = String(s ?? ''); return d.innerHTML; }
+var _ruleEditId = null;
+
+const SEV_COLOR = { Critical: 'var(--sev-emerg)', High: 'var(--sev-error)', Medium: 'var(--sev-warning)', Low: 'var(--sev-notice)' };
+const METRIC_LABELS = {
+    EpsTotal: 'EPS Spike (Global)', EpsPerSource: 'EPS Spike (Per Source)',
+    SeveritySpike: 'Severity Spike', NewSourceIp: 'New Source IP',
+    AuthFailureRate: 'Auth Failure Rate', SilentSource: 'Silent Source'
+};
+
+async function loadSummary() {
+    try {
+        const r = await fetch('/api/anomaly/summary');
+        if (!r.ok) return;
+        const d = await r.json();
+        document.getElementById('kpiRules').textContent   = d.totalRules           ?? 0;
+        document.getElementById('kpiEnabled').textContent  = d.enabledRules          ?? 0;
+        document.getElementById('kpiToday').textContent   = d.eventsToday           ?? 0;
+        document.getElementById('kpiUnack').textContent   = d.unacknowledgedEvents  ?? 0;
+    } catch {}
+}
+
+async function loadRules() {
+    const tbody = document.getElementById('rulesTbody');
+    try {
+        const r = await fetch('/api/anomaly/rules');
+        if (!r.ok) { tbody.innerHTML = `<tr><td colspan="9" style="color:var(--sev-error);text-align:center">Failed.</td></tr>`; return; }
+        const items = await r.json();
+        if (!items.length) {
+            tbody.innerHTML = `<tr><td colspan="9" style="color:var(--text-muted);text-align:center">No rules. Add one to start detecting anomalies.</td></tr>`;
+            return;
+        }
+        tbody.innerHTML = items.map(r => `
+            <tr>
+                <td style="font-weight:500;color:var(--text-primary)">${esc(r.name)}</td>
+                <td style="font-size:12px;color:var(--accent-cyan)">${esc(METRIC_LABELS[r.metricType] || r.metricType)}</td>
+                <td style="font-size:12px;color:var(--text-muted)">${r.baselineWindowMinutes} min</td>
+                <td style="font-size:12px;color:var(--text-secondary)">${r.thresholdMultiplier}× (min ${r.absoluteMinimum})</td>
+                <td><span style="color:${SEV_COLOR[r.severity]||'var(--text-primary)'};font-weight:600;font-size:12px">${esc(r.severity)}</span></td>
+                <td style="font-size:12px;color:var(--text-muted)">${(r.fireCount||0).toLocaleString()}</td>
+                <td style="font-size:11px;color:var(--text-muted)">${r.lastFiredAt ? new Date(r.lastFiredAt).toLocaleString() : '—'}</td>
+                <td>
+                    <label style="display:flex;align-items:center;gap:6px;cursor:pointer">
+                        <input type="checkbox" ${r.enabled ? 'checked' : ''} onchange="toggleRule(${r.id}, this.checked)" />
+                        <span style="font-size:12px;color:${r.enabled ? 'var(--sev-notice)' : 'var(--text-muted)'}">${r.enabled ? 'Active' : 'Paused'}</span>
+                    </label>
+                </td>
+                <td>
+                    <button class="btn btn-sm" style="font-size:11px;padding:3px 8px;background:transparent;border:1px solid var(--border);color:var(--accent-cyan)" onclick="editRule(${r.id})">Edit</button>
+                    <button class="btn btn-sm" style="font-size:11px;padding:3px 8px;background:transparent;border:1px solid var(--border);color:var(--sev-error);margin-left:4px" onclick="deleteRule(${r.id})">Delete</button>
+                </td>
+            </tr>`).join('');
+    } catch { tbody.innerHTML = `<tr><td colspan="9" style="color:var(--sev-error);text-align:center">Network error.</td></tr>`; }
+}
+
+async function loadEvents() {
+    const ack = document.getElementById('filterAck').value;
+    let url = '/api/anomaly/events?page=1&pageSize=50';
+    if (ack) url += `&acknowledged=${ack}`;
+    const tbody = document.getElementById('eventsTbody');
+    try {
+        const r = await fetch(url);
+        if (!r.ok) { tbody.innerHTML = `<tr><td colspan="9" style="color:var(--sev-error);text-align:center">Failed.</td></tr>`; return; }
+        const d = await r.json();
+        if (!d.items?.length) {
+            tbody.innerHTML = `<tr><td colspan="9" style="color:var(--text-muted);text-align:center">No anomaly events.</td></tr>`;
+            return;
+        }
+        tbody.innerHTML = d.items.map(e => `
+            <tr>
+                <td class="mono" style="font-size:11px;color:var(--text-muted)">${new Date(e.detectedAt).toLocaleString()}</td>
+                <td style="font-size:12px;font-weight:500;color:var(--text-primary)">${esc(e.ruleName || '—')}</td>
+                <td class="mono" style="font-size:12px;color:var(--accent-cyan)">${esc(e.affectedEntity || 'Platform')}</td>
+                <td style="font-size:12px;color:var(--text-muted)">${e.baselineValue.toFixed(2)}</td>
+                <td style="font-size:12px;color:var(--sev-error);font-weight:600">${e.observedValue.toFixed(2)}</td>
+                <td style="font-size:12px;color:var(--sev-warning)">×${e.deviationRatio.toFixed(1)}</td>
+                <td><span style="color:${SEV_COLOR[e.severity]||'var(--text-primary)'};font-weight:600;font-size:12px">${esc(e.severity)}</span></td>
+                <td style="font-size:12px;color:${e.acknowledged ? 'var(--text-muted)' : 'var(--sev-error)'}">${e.acknowledged ? 'ACK' : 'Open'}</td>
+                <td>
+                    ${!e.acknowledged ? `<button class="btn btn-sm" style="font-size:11px;padding:3px 8px;background:transparent;border:1px solid var(--sev-notice);color:var(--sev-notice)" onclick="ackEvent(${parseInt(e.id)})">Ack</button>` : ''}
+                </td>
+            </tr>`).join('');
+    } catch { tbody.innerHTML = `<tr><td colspan="9" style="color:var(--sev-error);text-align:center">Network error.</td></tr>`; }
+}
+
+async function toggleRule(id, enabled) {
+    const r = await fetch(`/api/anomaly/rules/${id}/toggle?enabled=${enabled}`, { method: 'PATCH' });
+    if (!r.ok) { alert('Toggle failed (HTTP ' + r.status + ')'); loadRules(); return; }
+    loadSummary(); loadRules();
+}
+
+function openRuleModal() {
+    _ruleEditId = null;
+    document.getElementById('ruleModalTitle').textContent = 'New Anomaly Rule';
+    document.getElementById('ruleSaveBtn').textContent = 'Create Rule';
+    ['rName','rDesc'].forEach(id => document.getElementById(id).value = '');
+    document.getElementById('rMetric').value    = 'EpsTotal';
+    document.getElementById('rWindow').value    = '60';
+    document.getElementById('rThreshold').value = '3.0';
+    document.getElementById('rMinVal').value    = '5';
+    document.getElementById('rSeverity').value  = 'High';
+    document.getElementById('rEnabled').checked      = true;
+    document.getElementById('rAutoIncident').checked = false;
+    document.getElementById('ruleModal').classList.remove('hidden');
+}
+
+async function editRule(id) {
+    try {
+        const r = await fetch(`/api/anomaly/rules/${id}`);
+        if (!r.ok) return;
+        const d = await r.json();
+        _ruleEditId = id;
+        document.getElementById('ruleModalTitle').textContent = `Edit Rule #${id}`;
+        document.getElementById('ruleSaveBtn').textContent = 'Save Changes';
+        document.getElementById('rName').value      = d.name                    || '';
+        document.getElementById('rDesc').value      = d.description             || '';
+        document.getElementById('rMetric').value    = d.metricType              || 'EpsTotal';
+        document.getElementById('rWindow').value    = d.baselineWindowMinutes   ?? 60;
+        document.getElementById('rThreshold').value = d.thresholdMultiplier     ?? 3.0;
+        document.getElementById('rMinVal').value    = d.absoluteMinimum         ?? 5;
+        document.getElementById('rSeverity').value  = d.severity                || 'High';
+        document.getElementById('rEnabled').checked      = d.enabled      ?? true;
+        document.getElementById('rAutoIncident').checked = d.autoCreateIncident ?? false;
+        document.getElementById('ruleModal').classList.remove('hidden');
+    } catch {}
+}
+
+async function saveRule() {
+    const body = {
+        name:                  document.getElementById('rName').value.trim(),
+        description:           document.getElementById('rDesc').value.trim() || null,
+        metricType:            document.getElementById('rMetric').value,
+        baselineWindowMinutes: parseInt(document.getElementById('rWindow').value),
+        thresholdMultiplier:   parseFloat(document.getElementById('rThreshold').value),
+        absoluteMinimum:       parseFloat(document.getElementById('rMinVal').value),
+        severity:              document.getElementById('rSeverity').value,
+        enabled:               document.getElementById('rEnabled').checked,
+        autoCreateIncident:    document.getElementById('rAutoIncident').checked
+    };
+    if (!body.name) { alert('Name is required.'); return; }
+    const url = _ruleEditId ? `/api/anomaly/rules/${_ruleEditId}` : '/api/anomaly/rules';
+    const method = _ruleEditId ? 'PUT' : 'POST';
+    try {
+        const r = await fetch(url, { method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body) });
+        if (!r.ok) { alert('Save failed.'); return; }
+        closeRuleModal(); loadSummary(); loadRules();
+    } catch { alert('Network error.'); }
+}
+
+async function deleteRule(id) {
+    if (!confirm(`Delete anomaly rule #${id}?`)) return;
+    await fetch(`/api/anomaly/rules/${id}`, { method: 'DELETE' });
+    loadSummary(); loadRules();
+}
+
+async function ackEvent(id) {
+    await fetch(`/api/anomaly/events/${id}/acknowledge`, { method: 'PATCH' });
+    loadSummary(); loadEvents();
+}
+
+function closeRuleModal() { document.getElementById('ruleModal').classList.add('hidden'); }
+document.getElementById('ruleModal').addEventListener('click', function(e) { if (e.target === this) closeRuleModal(); });
+
+loadSummary(); loadRules(); loadEvents();
+
+setInterval(function() {
+    if (!document.getElementById('ruleModal').classList.contains('hidden')) return;
+    loadSummary();
+    loadEvents();
+}, 30000);
+</script>
+}

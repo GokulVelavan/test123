@@ -1,0 +1,124 @@
+@model PlatformSettingsViewModel
+@{
+    Layout = "_AppLayout";
+    ViewData["Title"] = "Settings &middot; General";
+    ViewData["TopbarMeta"] = "Platform configuration";
+}
+
+@await Html.PartialAsync("_SettingsNav")
+<div style="padding:20px;display:flex;flex-direction:column;gap:16px">
+
+    @if (TempData["Notice"] is string notice)
+    {
+        <div class="alert-bar success"><span>&#10003;</span> @notice</div>
+    }
+
+    <!-- Accent Color Picker -->
+    <div class="panel">
+        <div class="panel-header"><div class="panel-title">Appearance</div></div>
+        <div style="padding:1rem 1.5rem 1.5rem">
+            <div class="form-group">
+                <label class="form-label" style="margin-bottom:8px">Accent Color</label>
+                <div class="accent-swatches" id="accentSwatches">
+                    <button type="button" class="accent-swatch" data-color="#00d4ff" style="background:#00d4ff" title="Cyan (default)"></button>
+                    <button type="button" class="accent-swatch" data-color="#4895ef" style="background:#4895ef" title="Blue"></button>
+                    <button type="button" class="accent-swatch" data-color="#06d6a0" style="background:#06d6a0" title="Green"></button>
+                    <button type="button" class="accent-swatch" data-color="#ff9f1c" style="background:#ff9f1c" title="Orange"></button>
+                    <button type="button" class="accent-swatch" data-color="#ff3b5c" style="background:#ff3b5c" title="Red"></button>
+                    <button type="button" class="accent-swatch" data-color="#b57bee" style="background:#b57bee" title="Purple"></button>
+                    <button type="button" class="accent-swatch" data-color="#ffd166" style="background:#ffd166" title="Yellow"></button>
+                </div>
+                <div style="font-size:11px;color:var(--text-muted);margin-top:4px">Saved in browser — affects accent highlights across the UI.</div>
+            </div>
+        </div>
+    </div>
+
+    <div class="panel">
+        <div class="panel-header"><div class="panel-title">General</div></div>
+        <form asp-action="GeneralSave" method="post" class="settings-form">
+            @Html.AntiForgeryToken()
+            <div class="settings-grid">
+                <div class="form-group">
+                    <label class="form-label">Platform Name</label>
+                    <input class="form-input" asp-for="PlatformName" />
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Organization</label>
+                    <input class="form-input" asp-for="Organization" />
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Contact Email</label>
+                    <input class="form-input" asp-for="ContactEmail" type="email" />
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Timezone</label>
+                    <input class="form-input" asp-for="Timezone" />
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Date Format</label>
+                    <input class="form-input" asp-for="DateFormat" />
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Feed Buffer Size</label>
+                    <input class="form-input" asp-for="FeedBufferSize" type="number" min="100" max="50000" />
+                </div>
+                <div class="form-group">
+                    <label class="form-label">Refresh Interval (seconds)</label>
+                    <input class="form-input" asp-for="RefreshIntervalSeconds" type="number" min="1" max="300" />
+                </div>
+            </div>
+            <div class="settings-toggles">
+                <label class="toggle-wrap">
+                    <input type="checkbox" asp-for="ShowMilliseconds" style="accent-color:var(--accent-cyan)" />
+                    <span>Show Milliseconds</span>
+                </label>
+                <label class="toggle-wrap">
+                    <input type="checkbox" asp-for="AutoScrollFeed" style="accent-color:var(--accent-cyan)" />
+                    <span>Auto-scroll Live Feed</span>
+                </label>
+                <label class="toggle-wrap">
+                    <input type="checkbox" asp-for="AudibleAlerts" style="accent-color:var(--accent-cyan)" />
+                    <span>Audible Alerts</span>
+                </label>
+            </div>
+            <div class="form-actions">
+                <button type="submit" class="btn btn-accent">Save Changes</button>
+            </div>
+        </form>
+    </div>
+
+</div>
+
+@section Scripts {
+<script>
+(function () {
+    const STORAGE_KEY = 'sentinelAccentColor';
+    const DEFAULT_COLOR = '#00d4ff';
+
+    function applyAccent(color) {
+        document.documentElement.style.setProperty('--accent-cyan', color);
+    }
+
+    function markSelected(color) {
+        document.querySelectorAll('.accent-swatch').forEach(function (sw) {
+            sw.classList.toggle('selected', sw.dataset.color === color);
+        });
+    }
+
+    // Init from localStorage
+    var saved = localStorage.getItem(STORAGE_KEY) || DEFAULT_COLOR;
+    applyAccent(saved);
+    markSelected(saved);
+
+    // Wire swatch clicks
+    document.querySelectorAll('.accent-swatch').forEach(function (sw) {
+        sw.addEventListener('click', function () {
+            var color = sw.dataset.color;
+            applyAccent(color);
+            markSelected(color);
+            localStorage.setItem(STORAGE_KEY, color);
+        });
+    });
+})();
+</script>
+}

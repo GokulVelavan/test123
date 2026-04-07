@@ -1,0 +1,253 @@
+@{
+    Layout = "_AppLayout";
+    ViewData["Title"] = "Sources — Groups";
+    ViewData["TopbarMeta"] = "Organize sources into logical groups";
+}
+
+<!-- Create / Edit Group Modal -->
+<div class="modal-overlay hidden" id="groupModal">
+    <div class="modal-box" style="max-width:460px">
+        <div class="modal-header">
+            <div class="modal-title" id="groupModalTitle">+ Create Group</div>
+            <button class="modal-close" onclick="closeGroupModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <div id="groupModalError" class="alert-bar error" style="display:none"><span>&#x26A0;</span> <span id="groupModalErrorMsg"></span></div>
+            <div class="form-row">
+                <label class="form-label">Group Name *</label>
+                <input class="form-input" id="grpName" placeholder="e.g. DMZ Firewalls">
+            </div>
+            <div class="form-row">
+                <label class="form-label">Description</label>
+                <input class="form-input" id="grpDesc" placeholder="Optional description">
+            </div>
+            <div class="form-row">
+                <label class="form-label">Color Tag</label>
+                <div style="display:flex;gap:8px;flex-wrap:wrap" id="grpColorPicker">
+                    @foreach (var color in new[]{"#00d4ff","#ff3b5c","#2ecc71","#ffcd47","#7b8cff","#ff6b35","#b57bee","#7b8fa6"})
+                    {
+                        <div class="grp-color-swatch" data-color="@color"
+                             style="width:24px;height:24px;border-radius:4px;background:@color;cursor:pointer;border:2px solid transparent"
+                             onclick="selectGrpColor('@color')"></div>
+                    }
+                </div>
+                <input type="hidden" id="grpColor" value="#00d4ff">
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-ghost btn-sm" onclick="closeGroupModal()">Cancel</button>
+            <button class="btn btn-accent btn-sm" id="groupSubmitBtn" onclick="submitGroup()">Create</button>
+        </div>
+    </div>
+</div>
+
+<!-- Assign Sources Modal -->
+<div class="modal-overlay hidden" id="assignModal">
+    <div class="modal-box" style="max-width:500px">
+        <div class="modal-header">
+            <div class="modal-title">Assign Sources — <span id="assignGroupName"></span></div>
+            <button class="modal-close" onclick="closeAssignModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <p style="color:var(--text-muted);font-size:13px;margin-bottom:10px">Select sources to include in this group.</p>
+            <input class="form-input" id="assignSearch" placeholder="Filter sources…" oninput="filterAssignList()" style="margin-bottom:10px">
+            <div id="assignList" style="max-height:300px;overflow-y:auto;display:flex;flex-direction:column;gap:6px"></div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-ghost btn-sm" onclick="closeAssignModal()">Cancel</button>
+            <button class="btn btn-accent btn-sm" id="assignSubmitBtn" onclick="submitAssign()">Save</button>
+        </div>
+    </div>
+</div>
+
+@await Html.PartialAsync("_SourcesNav")
+<div style="padding:20px;display:flex;flex-direction:column;gap:16px">
+
+    <div class="panel">
+        <div class="panel-header">
+            <div class="panel-title">Source Groups</div>
+            <div class="panel-controls">
+                <button class="btn btn-accent btn-sm" onclick="openCreateGroupModal()">+ Create Group</button>
+            </div>
+        </div>
+        <div id="groupsContainer" style="padding:1rem;display:grid;grid-template-columns:repeat(auto-fill,minmax(280px,1fr));gap:16px">
+            <div style="color:var(--text-muted);font-size:13px">Loading&hellip;</div>
+        </div>
+    </div>
+
+</div>
+
+@section Scripts {
+<script>
+var editGroupId = null;
+var allSources  = [];
+var assignGroupId = null;
+
+function esc(s) { var d = document.createElement('div'); d.textContent = String(s ?? ''); return d.innerHTML; }
+
+/* ── Groups data ────────────────────────────────────────── */
+async function loadGroups() {
+    try {
+        const [grpRes, srcRes] = await Promise.all([
+            fetch('/api/source-groups'),
+            fetch('/api/sources?page=1&pageSize=500')
+        ]);
+        if (srcRes.ok) { const d = await srcRes.json(); allSources = d.items ?? []; }
+        if (!grpRes.ok) { document.getElementById('groupsContainer').innerHTML = '<div style="color:var(--sev-error)">Failed to load groups.</div>'; return; }
+
+        const groups = await grpRes.json();
+        if (!groups.length) {
+            document.getElementById('groupsContainer').innerHTML = '<div style="color:var(--text-muted);font-size:13px">No groups yet. Create one to organise your sources.</div>';
+            return;
+        }
+
+        const cards = groups.map(g => {
+            const memberIds = (g.memberIds ?? []);
+            const members   = allSources.filter(s => memberIds.map(Number).includes(Number(s.id)));
+            const online    = members.filter(s => s.status === 'Online').length;
+            const color     = g.color || '#00d4ff';
+            return `<div style="background:var(--bg-elevated);border:1px solid var(--border);border-radius:10px;overflow:hidden;border-top:3px solid ${color}">
+                <div style="padding:14px 16px">
+                    <div style="display:flex;justify-content:space-between;align-items:flex-start">
+                        <div>
+                            <div style="font-size:15px;font-weight:600;color:var(--text-primary)">${esc(g.name)}</div>
+                            ${g.description ? '<div style="font-size:12px;color:var(--text-muted);margin-top:2px">' + esc(g.description) + '</div>' : ''}
+                        </div>
+                        <div style="display:flex;gap:6px">
+                            <button class="btn btn-ghost btn-sm" style="font-size:11px" data-gid="${g.id}" data-gname="${esc(g.name)}" data-mids='${JSON.stringify(memberIds)}' onclick="openAssignModal(parseInt(this.dataset.gid), this.dataset.gname, JSON.parse(this.dataset.mids))">Sources</button>
+                            <button class="btn btn-ghost btn-sm" style="font-size:11px" onclick='openEditGroupModal(${g.id}, "${esc(g.name)}", "${g.description ?? ""}", "${color}")'>Edit</button>
+                            <button class="btn btn-sm" style="font-size:11px;color:var(--sev-error);background:transparent;border:1px solid var(--sev-error)" onclick="deleteGroup(${g.id}, '${esc(g.name)}')">Del</button>
+                        </div>
+                    </div>
+                    <div style="display:flex;gap:12px;margin-top:12px">
+                        <div style="text-align:center">
+                            <div style="font-size:20px;font-weight:700;color:var(--accent-cyan);font-family:var(--font-display)">${members.length}</div>
+                            <div style="font-size:10px;color:var(--text-muted)">Sources</div>
+                        </div>
+                        <div style="text-align:center">
+                            <div style="font-size:20px;font-weight:700;color:var(--sev-notice);font-family:var(--font-display)">${online}</div>
+                            <div style="font-size:10px;color:var(--text-muted)">Online</div>
+                        </div>
+                        <div style="text-align:center">
+                            <div style="font-size:20px;font-weight:700;color:var(--text-muted);font-family:var(--font-display)">${members.length - online}</div>
+                            <div style="font-size:10px;color:var(--text-muted)">Offline</div>
+                        </div>
+                    </div>
+                    ${members.length ? '<div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:10px">' + members.slice(0,6).map(s => '<span style="font-size:10px;background:var(--bg-1);border:1px solid var(--border);border-radius:4px;padding:2px 6px;color:var(--text-muted)">' + esc(s.name) + '</span>').join('') + (members.length > 6 ? '<span style="font-size:10px;color:var(--text-muted)">+' + (members.length - 6) + ' more</span>' : '') + '</div>' : ''}
+                </div>
+            </div>`;
+        }).join('');
+        document.getElementById('groupsContainer').innerHTML = cards;
+    } catch { document.getElementById('groupsContainer').innerHTML = '<div style="color:var(--sev-error)">Network error.</div>'; }
+}
+
+/* ── Create / Edit modal ────────────────────────────────── */
+function selectGrpColor(color) {
+    document.getElementById('grpColor').value = color;
+    document.querySelectorAll('.grp-color-swatch').forEach(s => {
+        s.style.borderColor = s.dataset.color === color ? 'white' : 'transparent';
+    });
+}
+
+function openCreateGroupModal() {
+    editGroupId = null;
+    document.getElementById('groupModalTitle').textContent = '+ Create Group';
+    document.getElementById('groupSubmitBtn').textContent = 'Create';
+    document.getElementById('groupModalError').style.display = 'none';
+    document.getElementById('grpName').value = '';
+    document.getElementById('grpDesc').value = '';
+    selectGrpColor('#00d4ff');
+    document.getElementById('groupModal').classList.remove('hidden');
+    document.getElementById('grpName').focus();
+}
+
+function openEditGroupModal(id, name, desc, color) {
+    editGroupId = id;
+    document.getElementById('groupModalTitle').textContent = 'Edit Group';
+    document.getElementById('groupSubmitBtn').textContent = 'Save';
+    document.getElementById('groupModalError').style.display = 'none';
+    document.getElementById('grpName').value = name;
+    document.getElementById('grpDesc').value = desc || '';
+    selectGrpColor(color || '#00d4ff');
+    document.getElementById('groupModal').classList.remove('hidden');
+}
+
+function closeGroupModal() { document.getElementById('groupModal').classList.add('hidden'); editGroupId = null; }
+
+async function submitGroup() {
+    const name  = document.getElementById('grpName').value.trim();
+    const color = document.getElementById('grpColor').value;
+    if (!name) { document.getElementById('groupModalErrorMsg').textContent = 'Name is required.'; document.getElementById('groupModalError').style.display = 'flex'; return; }
+    const btn = document.getElementById('groupSubmitBtn');
+    btn.disabled = true; btn.textContent = 'Saving…';
+    try {
+        const isEdit = editGroupId !== null;
+        const r = await fetch(isEdit ? '/api/source-groups/' + editGroupId : '/api/source-groups', {
+            method: isEdit ? 'PUT' : 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify({ name, description: document.getElementById('grpDesc').value.trim() || null, color })
+        });
+        if (!r.ok) { const t = await r.text(); document.getElementById('groupModalErrorMsg').textContent = t || 'Failed.'; document.getElementById('groupModalError').style.display = 'flex'; return; }
+        closeGroupModal();
+        loadGroups();
+    } catch { document.getElementById('groupModalErrorMsg').textContent = 'Network error.'; document.getElementById('groupModalError').style.display = 'flex'; }
+    finally { btn.disabled = false; btn.textContent = editGroupId ? 'Save' : 'Create'; }
+}
+
+async function deleteGroup(id, name) {
+    if (!confirm('Delete group "' + name + '"?')) return;
+    try { const r = await fetch('/api/source-groups/' + id, { method: 'DELETE' }); if (!r.ok) { alert('Failed to delete.'); return; } loadGroups(); } catch { alert('Network error.'); }
+}
+
+/* ── Assign sources modal ───────────────────────────────── */
+var currentMemberIds = [];
+
+function openAssignModal(groupId, groupName, memberIds) {
+    assignGroupId   = groupId;
+    currentMemberIds = memberIds || [];
+    document.getElementById('assignGroupName').textContent = groupName;
+    document.getElementById('assignSearch').value = '';
+    renderAssignList(allSources);
+    document.getElementById('assignModal').classList.remove('hidden');
+}
+
+function filterAssignList() {
+    const q = document.getElementById('assignSearch').value.toLowerCase();
+    renderAssignList(allSources.filter(s => (s.name + s.ipAddress).toLowerCase().includes(q)));
+}
+
+function renderAssignList(sources) {
+    document.getElementById('assignList').innerHTML = sources.map(s =>
+        `<label style="display:flex;align-items:center;gap:8px;color:var(--text-primary);cursor:pointer;padding:4px 0">
+            <input type="checkbox" class="assign-chk" value="${s.id}" ${currentMemberIds.map(Number).includes(Number(s.id)) ? 'checked' : ''}>
+            <span style="font-size:13px">${esc(s.name)}</span>
+            <span style="font-size:11px;color:var(--text-muted)">${esc(s.ipAddress ?? '')}</span>
+            <span class="sev-badge ${(s.status ?? 'unknown').toLowerCase()}" style="font-size:10px;padding:1px 5px">${esc(s.status ?? '')}</span>
+        </label>`
+    ).join('');
+}
+
+function closeAssignModal() { document.getElementById('assignModal').classList.add('hidden'); assignGroupId = null; }
+
+async function submitAssign() {
+    if (!assignGroupId) return;
+    const ids = Array.from(document.querySelectorAll('.assign-chk:checked')).map(c => parseInt(c.value));
+    const btn = document.getElementById('assignSubmitBtn');
+    btn.disabled = true; btn.textContent = 'Saving…';
+    try {
+        const r = await fetch('/api/source-groups/' + assignGroupId + '/members', {
+            method: 'PUT', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ sourceIds: ids })
+        });
+        if (!r.ok) { alert('Failed to update members.'); return; }
+        closeAssignModal();
+        loadGroups();
+    } catch { alert('Network error.'); }
+    finally { btn.disabled = false; btn.textContent = 'Save'; }
+}
+
+document.getElementById('groupModal').addEventListener('click',  function(e) { if (e.target === this) closeGroupModal(); });
+document.getElementById('assignModal').addEventListener('click', function(e) { if (e.target === this) closeAssignModal(); });
+selectGrpColor('#00d4ff');
+loadGroups();
+</script>
+}

@@ -1,0 +1,517 @@
+@{
+    Layout = "_AppLayout";
+    ViewData["Title"] = "Alerts";
+    ViewData["TopbarMeta"] = "Fired alert events and rule configuration";
+}
+
+<!-- Edit Rule Modal -->
+<div class="modal-overlay hidden" id="editRuleModal">
+    <div class="modal-box">
+        <div class="modal-header">
+            <div class="modal-title">Edit Alert Rule</div>
+            <button class="modal-close" onclick="closeEditRuleModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <div id="editRuleModalError" class="alert-bar error" style="display:none"><span>&#x26A0;</span> <span id="editRuleModalErrorMsg"></span></div>
+            <div class="form-row">
+                <label class="form-label">Rule Name *</label>
+                <input class="form-input" id="editRuleNameInput" placeholder="e.g. Critical Auth Failure">
+            </div>
+            <div class="form-row">
+                <label class="form-label">Description</label>
+                <textarea class="form-textarea" id="editRuleDescInput" placeholder="What does this rule detect?"></textarea>
+            </div>
+            <div class="form-row-2">
+                <div class="form-row">
+                    <label class="form-label">Severity</label>
+                    <select class="form-select" id="editRuleSevInput">
+                        <option value="Critical">Critical</option>
+                        <option value="Error">Error</option>
+                        <option value="Warning">Warning</option>
+                        <option value="Notice">Notice</option>
+                        <option value="Info">Info</option>
+                    </select>
+                </div>
+                <div class="form-row">
+                    <label class="form-label">Time Window (mins)</label>
+                    <input class="form-input" id="editRuleTimeWindowInput" type="number" min="1" placeholder="5">
+                </div>
+            </div>
+            <div class="form-row">
+                <label class="form-label">Source Type</label>
+                <input class="form-input" id="editRuleSourceTypeInput" placeholder="e.g. 192.168.1.50, DESKTOP-J3OG6BB, Firewall">
+            </div>
+            <div class="form-row">
+                <label class="form-label">Condition Expression</label>
+                <input class="form-input" id="editRuleConditionInput" placeholder="e.g. message CONTAINS 'auth failure'">
+            </div>
+            <div class="toggle-wrap">
+                <label class="toggle-switch">
+                    <input type="checkbox" id="editRuleEnabledInput">
+                    <span class="toggle-slider"></span>
+                </label>
+                <span class="form-label" style="text-transform:none;letter-spacing:0">Rule enabled</span>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-ghost btn-sm" onclick="closeEditRuleModal()">Cancel</button>
+            <button class="btn btn-accent btn-sm" id="editRuleSubmitBtn" onclick="submitEditRule()">Save Changes</button>
+        </div>
+    </div>
+</div>
+
+<!-- New Rule Modal -->
+<div class="modal-overlay hidden" id="newRuleModal">
+    <div class="modal-box">
+        <div class="modal-header">
+            <div class="modal-title">+ New Alert Rule</div>
+            <button class="modal-close" onclick="closeNewRuleModal()">&times;</button>
+        </div>
+        <div class="modal-body">
+            <div id="ruleModalError" class="alert-bar error" style="display:none"><span>&#x26A0;</span> <span id="ruleModalErrorMsg"></span></div>
+            <div class="form-row">
+                <label class="form-label">Rule Name *</label>
+                <input class="form-input" id="ruleNameInput" placeholder="e.g. Critical Auth Failure">
+            </div>
+            <div class="form-row">
+                <label class="form-label">Description</label>
+                <textarea class="form-textarea" id="ruleDescInput" placeholder="What does this rule detect?"></textarea>
+            </div>
+            <div class="form-row-2">
+                <div class="form-row">
+                    <label class="form-label">Severity</label>
+                    <select class="form-select" id="ruleSevInput">
+                        <option value="Critical">Critical</option>
+                        <option value="Error">Error</option>
+                        <option value="Warning" selected>Warning</option>
+                        <option value="Notice">Notice</option>
+                        <option value="Info">Info</option>
+                    </select>
+                </div>
+                <div class="form-row">
+                    <label class="form-label">Time Window (mins)</label>
+                    <input class="form-input" id="ruleTimeWindowInput" type="number" min="1" placeholder="5">
+                </div>
+            </div>
+            <div class="form-row">
+                <label class="form-label">Source Type</label>
+                <input class="form-input" id="ruleSourceTypeInput" placeholder="e.g. 192.168.1.50, DESKTOP-J3OG6BB, Firewall">
+            </div>
+            <div class="form-row">
+                <label class="form-label">Condition Expression</label>
+                <input class="form-input" id="ruleConditionInput" placeholder="e.g. message CONTAINS 'auth failure'">
+            </div>
+            <div class="toggle-wrap">
+                <label class="toggle-switch">
+                    <input type="checkbox" id="ruleEnabledInput" checked>
+                    <span class="toggle-slider"></span>
+                </label>
+                <span class="form-label" style="text-transform:none;letter-spacing:0">Enable rule immediately</span>
+            </div>
+        </div>
+        <div class="modal-footer">
+            <button class="btn btn-ghost btn-sm" onclick="closeNewRuleModal()">Cancel</button>
+            <button class="btn btn-accent btn-sm" id="ruleSubmitBtn" onclick="submitNewRule()">Create Rule</button>
+        </div>
+    </div>
+</div>
+
+<div style="padding:20px;display:flex;flex-direction:column;gap:16px">
+
+    <div class="metrics-row" style="grid-template-columns:repeat(4,1fr)">
+        <div class="metric-card red">
+            <div class="metric-label">Critical</div>
+            <div class="metric-value" id="kpiCritical">&mdash;</div>
+        </div>
+        <div class="metric-card yellow">
+            <div class="metric-label">Warning</div>
+            <div class="metric-value" id="kpiWarning">&mdash;</div>
+        </div>
+        <div class="metric-card cyan">
+            <div class="metric-label">Active</div>
+            <div class="metric-value" id="kpiActive">&mdash;</div>
+        </div>
+        <div class="metric-card green">
+            <div class="metric-label">Resolved</div>
+            <div class="metric-value" id="kpiResolved">&mdash;</div>
+        </div>
+    </div>
+
+    <div style="display:grid;grid-template-columns:1fr 240px;gap:16px;align-items:start">
+        <div style="display:flex;flex-direction:column;gap:16px">
+            <div class="panel">
+                <div class="panel-header">
+                    <div class="panel-title">Fired Events</div>
+                    <div class="panel-controls">
+                        <select class="select-sm" id="evtSevFilter" onchange="resetAndLoadEvents()">
+                            <option value="">All Severity</option>
+                            <option value="Critical">Critical</option>
+                            <option value="Error">Error</option>
+                            <option value="Warning">Warning</option>
+                            <option value="Notice">Notice</option>
+                            <option value="Info">Info</option>
+                        </select>
+                        <select class="select-sm" id="evtAckFilter" onchange="resetAndLoadEvents()">
+                            <option value="">All</option>
+                            <option value="false">Unacknowledged</option>
+                            <option value="true">Acknowledged</option>
+                        </select>
+                    </div>
+                </div>
+                <div id="alertEventsTable" class="table-wrap">
+                    <div style="padding:1.5rem;color:var(--text-muted)">Loading&hellip;</div>
+                </div>
+                <div id="evtPagination" class="pagination" style="display:none">
+                    <button class="page-btn" id="evtPrevBtn" onclick="evtChangePage(-1)">&larr; Prev</button>
+                    <span class="page-info" id="evtPageInfo">Page 1</span>
+                    <button class="page-btn" id="evtNextBtn" onclick="evtChangePage(1)">Next &rarr;</button>
+                </div>
+            </div>
+
+            <div class="panel">
+                <div class="panel-header">
+                    <div class="panel-title">Alert Rules</div>
+                    <div class="panel-controls">
+                        <button class="btn btn-accent btn-sm" onclick="openNewRuleModal()">+ New Rule</button>
+                    </div>
+                </div>
+                <div id="alertRulesTable" class="table-wrap">
+                    <div style="padding:1.5rem;color:var(--text-muted)">Loading&hellip;</div>
+                </div>
+            </div>
+        </div>
+
+        <!-- Summary Sidebar -->
+        <div style="display:flex;flex-direction:column;gap:12px">
+            <div class="panel">
+                <div class="panel-header"><div class="panel-title">Summary</div></div>
+                <div style="padding:12px 16px;display:flex;flex-direction:column;gap:10px">
+                    <div style="display:flex;justify-content:space-between;align-items:center">
+                        <span style="font-size:11px;color:var(--text-muted);text-transform:uppercase;letter-spacing:.5px">Total Fired (All Time)</span>
+                        <span class="mono" id="sumTotal" style="color:var(--text-1);font-size:14px;font-weight:600">&mdash;</span>
+                    </div>
+                    <div style="height:1px;background:var(--border)"></div>
+                    <div style="display:flex;flex-direction:column;gap:8px" id="sumBreakdown">
+                        <div class="alert-sev-row"><span class="sev-badge critical" style="min-width:60px;text-align:center">CRIT</span><span class="mono" id="sumCrit" style="margin-left:auto">&mdash;</span></div>
+                        <div class="alert-sev-row"><span class="sev-badge error"    style="min-width:60px;text-align:center">ERROR</span><span class="mono" id="sumError" style="margin-left:auto">&mdash;</span></div>
+                        <div class="alert-sev-row"><span class="sev-badge warning"  style="min-width:60px;text-align:center">WARN</span><span class="mono" id="sumWarn" style="margin-left:auto">&mdash;</span></div>
+                        <div class="alert-sev-row"><span class="sev-badge notice"   style="min-width:60px;text-align:center">NOTICE</span><span class="mono" id="sumNotice" style="margin-left:auto">&mdash;</span></div>
+                        <div class="alert-sev-row"><span class="sev-badge info"     style="min-width:60px;text-align:center">INFO</span><span class="mono" id="sumInfo" style="margin-left:auto">&mdash;</span></div>
+                    </div>
+                    <div style="height:1px;background:var(--border)"></div>
+                    <div style="display:flex;flex-direction:column;gap:6px">
+                        <div style="display:flex;justify-content:space-between;align-items:center">
+                            <span style="font-size:11px;color:var(--text-muted)">Unacknowledged</span>
+                            <span class="mono" id="sumActive" style="color:var(--sev-error);font-size:13px">&mdash;</span>
+                        </div>
+                        <div style="display:flex;justify-content:space-between;align-items:center">
+                            <span style="font-size:11px;color:var(--text-muted)">Acknowledged</span>
+                            <span class="mono" id="sumResolved" style="color:var(--sev-notice);font-size:13px">&mdash;</span>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <div class="panel">
+                <div class="panel-header"><div class="panel-title">Quick Actions</div></div>
+                <div style="padding:12px 16px;display:flex;flex-direction:column;gap:8px">
+                    <button class="btn btn-ghost btn-sm" style="width:100%;justify-content:flex-start" onclick="resetAndLoadEvents()">&#x21BA; Refresh Events</button>
+                    <button class="btn btn-ghost btn-sm" style="width:100%;justify-content:flex-start" onclick="loadRules()">&#x21BA; Refresh Rules</button>
+                    <button class="btn btn-accent btn-sm" style="width:100%" onclick="openNewRuleModal()">+ New Rule</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
+</div>
+
+@section Scripts {
+<script>
+/* ── state ────────────────────────────────────────────── */
+var evtPage       = 1;
+var evtPageSize   = 20;
+var evtTotalPages = 1;
+
+function esc(s) { var d = document.createElement('div'); d.textContent = s; return d.innerHTML; }
+
+/* ── summary KPIs ─────────────────────────────────────── */
+async function loadSummary() {
+    try {
+        const r = await fetch('/api/alerts/summary');
+        if (!r.ok) { console.error('alerts/summary', r.status, await r.text()); return; }
+        const s = await r.json();
+        document.getElementById('kpiCritical').textContent = s.criticalCount   ?? '—';
+        document.getElementById('kpiWarning').textContent  = s.warningCount    ?? '—';
+        document.getElementById('kpiActive').textContent   = s.unacknowledgedCount ?? '—';
+        document.getElementById('kpiResolved').textContent = s.acknowledgedCount  ?? '—';
+        document.getElementById('sumTotal').textContent    = s.totalFiredToday     ?? '—';
+        document.getElementById('sumCrit').textContent     = s.criticalCount       ?? '0';
+        document.getElementById('sumError').textContent    = s.errorCount          ?? '0';
+        document.getElementById('sumWarn').textContent     = s.warningCount        ?? '0';
+        document.getElementById('sumNotice').textContent   = s.noticeCount         ?? '0';
+        document.getElementById('sumInfo').textContent     = s.infoCount           ?? '0';
+        document.getElementById('sumActive').textContent   = s.unacknowledgedCount ?? '0';
+        document.getElementById('sumResolved').textContent = s.acknowledgedCount   ?? '0';
+    } catch(err) { console.error('loadSummary', err); }
+}
+
+/* ── fired events (filtered + paginated) ─────────────── */
+async function loadEvents() {
+    var sev = document.getElementById('evtSevFilter').value;
+    var ack = document.getElementById('evtAckFilter').value;
+    var qs  = '/api/alerts/events?page=' + evtPage + '&pageSize=' + evtPageSize;
+    if (sev) qs += '&severity='    + encodeURIComponent(sev);
+    if (ack !== '') qs += '&acknowledged=' + ack;
+    try {
+        const r = await fetch(qs);
+        if (!r.ok) {
+            const msg = await r.text();
+            console.error('alerts/events', r.status, msg);
+            document.getElementById('alertEventsTable').innerHTML = `<div style="padding:1.5rem;color:var(--sev-error)">Error ${r.status}: ${msg || 'Failed to load events.'}</div>`;
+            return;
+        }
+        const d = await r.json();
+        evtTotalPages = (d.totalPages ?? Math.ceil((d.totalCount ?? 0) / evtPageSize)) || 1;
+
+        const rows = (d.items ?? []).map(e => {
+            const ts  = e.triggeredAt ? new Date(e.triggeredAt).toLocaleString() : '';
+            const sev = (e.severity ?? 'info').toLowerCase();
+            return `<tr>
+                <td class="mono" style="font-size:11px">${esc(ts)}</td>
+                <td><span class="sev-badge ${sev}">${esc(sev.toUpperCase())}</span></td>
+                <td>${esc(e.ruleName ?? '')}</td>
+                <td style="color:var(--accent-cyan);font-family:var(--font-mono);font-size:11px">${esc(e.sourceHost ?? '')}</td>
+                <td style="color:var(--text-muted);max-width:420px;word-break:break-word;white-space:normal;font-size:12px;line-height:1.4">${esc(e.message ?? '')}</td>
+                <td>${e.acknowledged
+                    ? '<span style="color:var(--sev-notice);font-size:11px;font-weight:600">&#10003; Acknowledged</span>'
+                    : '<button class="btn btn-sm" style="font-size:11px;white-space:nowrap" title="Mark this alert as acknowledged" onclick="ackEvent(' + e.id + ')">Acknowledge</button>'
+                }</td>
+            </tr>`;
+        }).join('');
+
+        document.getElementById('alertEventsTable').innerHTML = rows.length
+            ? `<table class="data-table"><thead><tr>
+                <th>Time</th><th>Severity</th><th>Rule</th><th>Host</th><th>Message</th><th></th>
+               </tr></thead><tbody>${rows}</tbody></table>`
+            : '<div style="padding:1.5rem;color:var(--text-muted)">No events match the current filters.</div>';
+
+        var pg = document.getElementById('evtPagination');
+        if (evtTotalPages > 1) {
+            document.getElementById('evtPageInfo').textContent = 'Page ' + evtPage + ' of ' + evtTotalPages;
+            document.getElementById('evtPrevBtn').disabled = evtPage <= 1;
+            document.getElementById('evtNextBtn').disabled = evtPage >= evtTotalPages;
+            pg.style.display = 'flex';
+        } else { pg.style.display = 'none'; }
+    } catch(err) {
+        console.error('loadEvents', err);
+        document.getElementById('alertEventsTable').innerHTML = `<div style="padding:1.5rem;color:var(--sev-error)">Failed to load events: ${err.message}</div>`;
+    }
+}
+
+function resetAndLoadEvents() { evtPage = 1; loadEvents(); }
+function evtChangePage(d) { var n = evtPage + d; if (n < 1 || n > evtTotalPages) return; evtPage = n; loadEvents(); }
+
+/* ── alert rules ─────────────────────────────────────── */
+async function loadRules() {
+    try {
+        const r = await fetch('/api/alerts/rules');
+        if (!r.ok) {
+            const msg = await r.text();
+            console.error('alerts/rules', r.status, msg);
+            document.getElementById('alertRulesTable').innerHTML = `<div style="padding:1.5rem;color:var(--sev-error)">Error ${r.status}: ${msg || 'Failed to load rules.'}</div>`;
+            return;
+        }
+        const items = await r.json();
+        const list = Array.isArray(items) ? items : (items.items ?? []);
+        const rows = list.map(r => {
+            const sev = (r.severity ?? 'info').toLowerCase();
+            const chk = r.enabled ? 'checked' : '';
+            return `<tr class="rule-row" data-id="${r.id}"
+                        data-name="${esc(r.name ?? '')}"
+                        data-desc="${esc(r.description ?? '')}"
+                        data-sev="${esc(r.severity ?? 'Warning')}"
+                        data-cond="${esc(r.conditionExpression ?? '')}"
+                        data-srctype="${esc(r.sourceType ?? '')}"
+                        data-tw="${r.timeWindow ?? ''}"
+                        data-enabled="${r.enabled}">
+                <td>${esc(r.name ?? '')}</td>
+                <td><span class="sev-badge ${sev}">${esc(sev.toUpperCase())}</span></td>
+                <td class="mono" style="font-size:11px;color:var(--text-muted)">${esc(r.sourceType ?? '—')}</td>
+                <td style="font-size:11px;color:var(--text-muted)">${esc(r.conditionExpression ?? '—')}</td>
+                <td>
+                    <label class="toggle-wrap" style="gap:6px">
+                        <label class="toggle-switch">
+                            <input type="checkbox" ${chk} onchange="toggleRule(${r.id}, this.checked)">
+                            <span class="toggle-slider"></span>
+                        </label>
+                        <span style="font-size:11px;color:${r.enabled ? 'var(--sev-notice)' : 'var(--text-muted)'}" id="ruleLabel${r.id}">${r.enabled ? 'Enabled' : 'Disabled'}</span>
+                    </label>
+                </td>
+                <td class="src-actions">
+                    <button class="btn btn-ghost btn-sm" onclick="openEditRuleModal(this.closest('tr'))">Edit</button>
+                    <button class="btn btn-sm" style="color:var(--sev-error);background:transparent;border:1px solid var(--sev-error)" onclick="deleteRule(${r.id})">Delete</button>
+                </td>
+            </tr>`;
+        }).join('');
+        document.getElementById('alertRulesTable').innerHTML = rows.length
+            ? `<table class="data-table"><thead><tr>
+                <th>Name</th><th>Severity</th><th>Source Type</th><th>Condition</th><th>Status</th><th style="width:130px"></th>
+               </tr></thead><tbody>${rows}</tbody></table>`
+            : '<div style="padding:1.5rem;color:var(--text-muted)">No rules configured.</div>';
+    } catch(err) {
+        console.error('loadRules', err);
+        document.getElementById('alertRulesTable').innerHTML = `<div style="padding:1.5rem;color:var(--sev-error)">Failed to load rules: ${err.message}</div>`;
+    }
+}
+
+function loadAlerts() { loadSummary(); loadEvents(); loadRules(); }
+
+/* ── ack event ───────────────────────────────────────── */
+async function ackEvent(id) {
+    await fetch('/api/alerts/events/' + id + '/acknowledge', {
+        method: 'PATCH',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ acknowledgedBy: null })
+    });
+    loadSummary(); loadEvents();
+}
+
+/* ── toggle rule ─────────────────────────────────────── */
+async function toggleRule(id, enabled) {
+    try {
+        const r = await fetch('/api/alerts/rules/' + id + '/toggle?enabled=' + enabled, { method: 'PATCH' });
+        if (r.ok) {
+            const lbl = document.getElementById('ruleLabel' + id);
+            if (lbl) { lbl.textContent = enabled ? 'Enabled' : 'Disabled'; lbl.style.color = enabled ? 'var(--sev-notice)' : 'var(--text-muted)'; }
+        }
+    } catch {}
+}
+
+/* ── delete rule ─────────────────────────────────────── */
+async function deleteRule(id) {
+    if (!confirm('Delete this alert rule? This cannot be undone.')) return;
+    try {
+        const r = await fetch('/api/alerts/rules/' + id, { method: 'DELETE' });
+        if (!r.ok) { alert('Failed to delete rule (HTTP ' + r.status + ')'); return; }
+        loadRules();
+    } catch { alert('Network error.'); }
+}
+
+/* ── New Rule modal ──────────────────────────────────── */
+function openNewRuleModal() {
+    document.getElementById('newRuleModal').classList.remove('hidden');
+    document.getElementById('ruleNameInput').focus();
+}
+
+function closeNewRuleModal() {
+    document.getElementById('newRuleModal').classList.add('hidden');
+    document.getElementById('ruleModalError').style.display = 'none';
+    ['ruleNameInput','ruleDescInput','ruleConditionInput','ruleSourceTypeInput','ruleTimeWindowInput'].forEach(id => {
+        const el = document.getElementById(id); if (el) el.value = '';
+    });
+    document.getElementById('ruleSevInput').value = 'Warning';
+    document.getElementById('ruleEnabledInput').checked = true;
+}
+
+async function submitNewRule() {
+    const name = document.getElementById('ruleNameInput').value.trim();
+    if (!name) { showRuleError('Rule Name is required.'); return; }
+    const btn = document.getElementById('ruleSubmitBtn');
+    btn.disabled = true; btn.textContent = 'Creating…';
+    try {
+        const payload = {
+            name,
+            description:         document.getElementById('ruleDescInput').value.trim() || null,
+            severity:            document.getElementById('ruleSevInput').value,
+            conditionExpression: document.getElementById('ruleConditionInput').value.trim() || null,
+            sourceType:          document.getElementById('ruleSourceTypeInput').value.trim() || null,
+            timeWindow:          parseInt(document.getElementById('ruleTimeWindowInput').value) || null,
+            enabled:             document.getElementById('ruleEnabledInput').checked
+        };
+        const r = await fetch('/api/alerts/rules', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        if (!r.ok) { const t = await r.text(); showRuleError(t || 'Failed to create rule.'); return; }
+        closeNewRuleModal();
+        loadRules();
+    } catch { showRuleError('Network error.'); }
+    finally { btn.disabled = false; btn.textContent = 'Create Rule'; }
+}
+
+function showRuleError(msg) {
+    document.getElementById('ruleModalErrorMsg').textContent = msg;
+    document.getElementById('ruleModalError').style.display = 'flex';
+}
+
+document.getElementById('newRuleModal').addEventListener('click', function(e) { if (e.target === this) closeNewRuleModal(); });
+
+/* ── Edit Rule modal ─────────────────────────────────── */
+var editRuleId = null;
+
+function openEditRuleModal(tr) {
+    editRuleId = tr.dataset.id;
+    document.getElementById('editRuleNameInput').value        = tr.dataset.name    || '';
+    document.getElementById('editRuleDescInput').value        = tr.dataset.desc    || '';
+    document.getElementById('editRuleSevInput').value         = tr.dataset.sev     || 'Warning';
+    document.getElementById('editRuleConditionInput').value   = tr.dataset.cond    || '';
+    document.getElementById('editRuleSourceTypeInput').value  = tr.dataset.srctype || '';
+    document.getElementById('editRuleTimeWindowInput').value  = tr.dataset.tw      || '';
+    document.getElementById('editRuleEnabledInput').checked   = tr.dataset.enabled === 'true';
+    document.getElementById('editRuleModalError').style.display = 'none';
+    document.getElementById('editRuleModal').classList.remove('hidden');
+    document.getElementById('editRuleNameInput').focus();
+}
+
+function closeEditRuleModal() {
+    document.getElementById('editRuleModal').classList.add('hidden');
+    editRuleId = null;
+}
+
+async function submitEditRule() {
+    if (!editRuleId) return;
+    const name = document.getElementById('editRuleNameInput').value.trim();
+    if (!name) { showEditRuleError('Rule Name is required.'); return; }
+    const btn = document.getElementById('editRuleSubmitBtn');
+    btn.disabled = true; btn.textContent = 'Saving…';
+    try {
+        const payload = {
+            name,
+            description:         document.getElementById('editRuleDescInput').value.trim() || null,
+            severity:            document.getElementById('editRuleSevInput').value,
+            conditionExpression: document.getElementById('editRuleConditionInput').value.trim() || null,
+            sourceType:          document.getElementById('editRuleSourceTypeInput').value.trim() || null,
+            timeWindow:          parseInt(document.getElementById('editRuleTimeWindowInput').value) || null,
+            enabled:             document.getElementById('editRuleEnabledInput').checked
+        };
+        const r = await fetch('/api/alerts/rules/' + editRuleId, {
+            method: 'PUT',
+            headers: { 'Content-Type': 'application/json' },
+            body: JSON.stringify(payload)
+        });
+        if (!r.ok) { const t = await r.text(); showEditRuleError(t || 'Failed to update rule.'); return; }
+        closeEditRuleModal();
+        loadRules();
+    } catch { showEditRuleError('Network error.'); }
+    finally { btn.disabled = false; btn.textContent = 'Save Changes'; }
+}
+
+function showEditRuleError(msg) {
+    document.getElementById('editRuleModalErrorMsg').textContent = msg;
+    document.getElementById('editRuleModalError').style.display = 'flex';
+}
+
+document.getElementById('editRuleModal').addEventListener('click', function(e) { if (e.target === this) closeEditRuleModal(); });
+
+loadAlerts();
+
+setInterval(function() {
+    var newModalOpen  = !document.getElementById('newRuleModal').classList.contains('hidden');
+    var editModalOpen = !document.getElementById('editRuleModal').classList.contains('hidden');
+    if (newModalOpen || editModalOpen) return;
+    loadSummary();
+    loadEvents();
+}, 30000);
+</script>
+}

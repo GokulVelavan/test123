@@ -1,0 +1,177 @@
+@{
+    Layout = "_AppLayout";
+    ViewData["Title"] = "Sources — Protocols";
+    ViewData["TopbarMeta"] = "Syslog, SNMP, and agent protocol settings";
+}
+@await Html.PartialAsync("_SourcesNav")
+<div style="padding:20px;display:flex;flex-direction:column;gap:16px">
+
+    <!-- Listener Status Cards -->
+    <div class="metrics-row" style="grid-template-columns:repeat(4,1fr)">
+        <div class="metric-card cyan">
+            <div class="metric-label">UDP Syslog</div>
+            <div class="metric-value" style="font-size:20px" id="protoUdpPort">—</div>
+            <div class="metric-sub" id="protoUdpStatus">Loading…</div>
+        </div>
+        <div class="metric-card blue">
+            <div class="metric-label">TCP Syslog</div>
+            <div class="metric-value" style="font-size:20px" id="protoTcpPort">—</div>
+            <div class="metric-sub" id="protoTcpStatus">Loading…</div>
+        </div>
+        <div class="metric-card green">
+            <div class="metric-label">TLS Syslog</div>
+            <div class="metric-value" style="font-size:20px" id="protoTlsPort">—</div>
+            <div class="metric-sub" id="protoTlsStatus">Loading…</div>
+        </div>
+        <div class="metric-card yellow">
+            <div class="metric-label">SNMP Traps</div>
+            <div class="metric-value" style="font-size:20px" id="protoSnmpPort">—</div>
+            <div class="metric-sub" id="protoSnmpStatus">Loading…</div>
+        </div>
+    </div>
+
+    <!-- Protocol Bindings Table -->
+    <div class="panel">
+        <div class="panel-header">
+            <div class="panel-title">Protocol Bindings</div>
+            <div class="panel-controls">
+                <a href="/settings/network" class="btn btn-ghost btn-sm">&#x2699; Edit Settings</a>
+            </div>
+        </div>
+        <table class="data-table" id="bindingsTable">
+            <thead>
+                <tr>
+                    <th>Protocol</th>
+                    <th>Transport</th>
+                    <th>Port</th>
+                    <th>Bind Address</th>
+                    <th>Status</th>
+                    <th>Description</th>
+                </tr>
+            </thead>
+            <tbody id="bindingsBody">
+                <tr><td colspan="6" style="color:var(--text-muted)">Loading…</td></tr>
+            </tbody>
+        </table>
+    </div>
+
+    <!-- Network ACL -->
+    <div class="panel">
+        <div class="panel-header">
+            <div class="panel-title">Network ACL</div>
+            <div class="panel-sub">Allowed source subnets</div>
+        </div>
+        <div style="padding:1.25rem 1.5rem">
+            <div id="aclContent" style="color:var(--text-muted);font-size:13px">Loading…</div>
+            <div style="margin-top:12px">
+                <a href="/settings/network" class="btn btn-ghost btn-sm">&#x2699; Edit in Network Settings</a>
+            </div>
+        </div>
+    </div>
+
+    <!-- Protocol Support Matrix -->
+    <div class="panel">
+        <div class="panel-header"><div class="panel-title">Supported Protocols</div></div>
+        <table class="data-table">
+            <thead>
+                <tr><th>Protocol</th><th>Format</th><th>RFC</th><th>Support</th></tr>
+            </thead>
+            <tbody>
+                @foreach (var p in new[]
+                {
+                    ("Syslog UDP",      "BSD / RFC 3164",   "RFC 3164",  "Full"),
+                    ("Syslog TCP",      "BSD / RFC 3164",   "RFC 3164",  "Full"),
+                    ("Syslog TLS",      "RFC 5424",         "RFC 5425",  "Full"),
+                    ("SNMP Traps v1",   "ASN.1 BER",        "RFC 1157",  "Full"),
+                    ("SNMP Traps v2c",  "ASN.1 BER",        "RFC 1901",  "Full"),
+                    ("SNMP Traps v3",   "ASN.1 BER",        "RFC 3411",  "Full"),
+                    ("CEF",             "ArcSight CEF",     "ArcSight",  "Full"),
+                    ("LEEF",            "QRadar LEEF",      "IBM",       "Full"),
+                    ("Windows Evtx",    "XML Event Log",    "Microsoft", "Agent"),
+                    ("NetFlow v9",      "IPFIX/NetFlow",    "RFC 3954",  "Agent"),
+                    ("IEC 61850 MMS",   "MMS over TCP",     "IEC 61850", "Agent"),
+                })
+                {
+                    var badgeClass = p.Item4 == "Full" ? "sev-badge notice" : "sev-badge info";
+                    <tr>
+                        <td style="font-weight:500">@p.Item1</td>
+                        <td style="color:var(--text-muted);font-size:12px">@p.Item2</td>
+                        <td class="mono" style="color:var(--text-muted);font-size:12px">@p.Item3</td>
+                        <td><span class="@badgeClass">@p.Item4</span></td>
+                    </tr>
+                }
+            </tbody>
+        </table>
+    </div>
+
+</div>
+
+@section Scripts {
+<script>
+async function loadProtocolConfig() {
+    try {
+        const [netRes, snmpRes] = await Promise.all([
+            fetch('/api/settings/network'),
+            fetch('/api/settings/snmp')
+        ]);
+
+        var udpPort = 514, tcpPort = 514, tlsEnabled = false;
+        var snmpEnabled = false, allowedSubnets = '';
+
+        if (netRes.ok) {
+            const n = await netRes.json();
+            udpPort        = n.syslogUdpPort ?? 514;
+            tcpPort        = n.syslogTcpPort ?? 514;
+            tlsEnabled     = !!n.tlsEnabled;
+            allowedSubnets = n.allowedSubnets ?? '';
+        }
+        if (snmpRes.ok) {
+            const s = await snmpRes.json();
+            snmpEnabled = !!s.enabled;
+        }
+
+        // KPI cards
+        document.getElementById('protoUdpPort').textContent    = ':' + udpPort;
+        document.getElementById('protoUdpStatus').textContent  = 'Listening';
+        document.getElementById('protoTcpPort').textContent    = ':' + tcpPort;
+        document.getElementById('protoTcpStatus').textContent  = 'Listening';
+        document.getElementById('protoTlsPort').textContent    = tlsEnabled ? ':' + tcpPort : '—';
+        document.getElementById('protoTlsStatus').textContent  = tlsEnabled ? 'Listening' : 'Disabled';
+        document.getElementById('protoSnmpPort').textContent   = ':162';
+        document.getElementById('protoSnmpStatus').textContent = snmpEnabled ? 'Forwarding' : 'Disabled';
+
+        // Bindings table
+        const rows = [
+            { proto:'Syslog UDP', transport:'UDP',     port: ':' + udpPort,                  bind:'0.0.0.0', status:'Listening',                      desc:'RFC 3164/5424 over UDP' },
+            { proto:'Syslog TCP', transport:'TCP',     port: ':' + tcpPort,                  bind:'0.0.0.0', status:'Listening',                      desc:'RFC 3164/5424 over TCP (framed)' },
+            { proto:'Syslog TLS', transport:'TCP+TLS', port: tlsEnabled ? ':' + tcpPort:'—', bind:'0.0.0.0', status: tlsEnabled ? 'Listening':'Disabled', desc:'RFC 5425 encrypted syslog' },
+            { proto:'SNMP Traps', transport:'UDP',     port: ':162',                         bind:'0.0.0.0', status: snmpEnabled ? 'Forwarding':'Disabled', desc:'SNMP v1/v2c/v3 trap receiver' },
+        ];
+        document.getElementById('bindingsBody').innerHTML = rows.map(r => {
+            const sc = r.status === 'Listening' || r.status === 'Forwarding' ? 'sev-badge notice' : 'sev-badge';
+            return `<tr>
+                <td style="font-weight:500">${r.proto}</td>
+                <td class="mono" style="color:var(--accent-cyan)">${r.transport}</td>
+                <td class="mono">${r.port}</td>
+                <td class="mono" style="color:var(--text-muted)">${r.bind}</td>
+                <td><span class="${sc}">${r.status}</span></td>
+                <td style="color:var(--text-muted);font-size:12px">${r.desc}</td>
+            </tr>`;
+        }).join('');
+
+        // ACL
+        if (allowedSubnets) {
+            const subnets = allowedSubnets.split(',').map(s => s.trim()).filter(Boolean);
+            document.getElementById('aclContent').innerHTML = subnets.map(s =>
+                `<span style="font-family:var(--font-mono);font-size:12px;background:var(--bg-elevated);border:1px solid var(--border);border-radius:4px;padding:3px 8px;margin-right:6px;margin-bottom:4px;display:inline-block">${s}</span>`
+            ).join('');
+        } else {
+            document.getElementById('aclContent').innerHTML = '<span style="color:var(--sev-notice)">&#10003;</span> All source IPs allowed (no restrictions configured)';
+        }
+
+    } catch {}
+}
+
+loadProtocolConfig();
+</script>
+}

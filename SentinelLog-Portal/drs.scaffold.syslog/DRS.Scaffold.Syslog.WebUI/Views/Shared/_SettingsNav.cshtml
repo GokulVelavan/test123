@@ -1,0 +1,15 @@
+@{
+    var ctrl   = ViewContext.RouteData.Values["controller"]?.ToString() ?? "";
+    var action = ViewContext.RouteData.Values["action"]?.ToString() ?? "";
+    string Tab(string a) => action.Equals(a, StringComparison.OrdinalIgnoreCase) ? "sub-nav-item active" : "sub-nav-item";
+}
+<div class="sub-nav">
+    <a class="@Tab("General")"       asp-controller="Settings" asp-action="General">General</a>
+    <a class="@Tab("Users")"         asp-controller="Settings" asp-action="Users">Users</a>
+    <a class="@Tab("Network")"       asp-controller="Settings" asp-action="Network">Network</a>
+    <a class="@Tab("Notifications")" asp-controller="Settings" asp-action="Notifications">Notifications</a>
+    <a class="@Tab("ApiKeys")"       asp-controller="Settings" asp-action="ApiKeys">API Keys</a>
+    <a class="@Tab("Sessions")"      asp-controller="Settings" asp-action="Sessions">Sessions</a>
+    <a class="@Tab("Audit")"         asp-controller="Settings" asp-action="Audit">Audit Log</a>
+    <a class="@Tab("License")"       asp-controller="Settings" asp-action="License">License</a>
+</div>

@@ -1,0 +1,530 @@
+================================================================
+  SENTINELLOG — RULES SETUP & TEST TRIGGER GUIDE
+  Updated to match actual rules in DB
+================================================================
+
+DB CONNECTION (pgAdmin or psql):
+  Host     : jsw-ams.c5pwstwpokkz.ap-south-1.rds.amazonaws.com
+  Database : Syslog
+  Username : postgres
+  Password : u0MjCOVeTvx40ZhRBCV1
+
+After any INSERT into systemlogs:
+  Worker picks it up in ~10 seconds → alert fires.
+  Anomaly detection runs every 30 seconds (dev mode).
+
+IMPORTANT — ALL ALERT RULES MUST USE SEVERITY: Info
+  Windows event logs arrive as Info (severity 6).
+  Any rule set to Warning/Error/Critical will NEVER fire
+  on Windows logs. Use Info to catch everything.
+
+================================================================
+  MODULE 1 — ALERTS
+  Portal: Alerts → Alert Rules section → + New Rule
+================================================================
+
+HOW TO ADD A RULE — FIELD GUIDE:
+┌─────────────────────┬──────────────────────────────────────────────────────┐
+│ FIELD               │ WHAT TO ENTER                                        │
+├─────────────────────┼──────────────────────────────────────────────────────┤
+│ Rule Name *         │ Any name, e.g. "Failed Logon"                        │
+│ Description         │ Optional note                                        │
+│ Severity            │ *** ALWAYS USE Info FOR WINDOWS LOGS ***             │
+│                     │   Info = matches all events (Info and above)         │
+│ Time Window (mins)  │ Enter 5 (stored for reference)                       │
+│ Source Type         │ Leave EMPTY to match all sources                     │
+│ Condition           │ Keyword match against the log message                │
+│ Expression          │   Single  : An account failed to log on              │
+│                     │   AND     : failed to log on AND testuser            │
+│                     │   OR      : critical: OR emergency:                  │
+│                     │   Empty   : matches ALL messages                     │
+│ Enable immediately  │ Toggle ON                                            │
+└─────────────────────┴──────────────────────────────────────────────────────┘
+
+────────────────────────────────────────────────────────────────
+RULE 1 — Failed Logon - Windows
+────────────────────────────────────────────────────────────────
+  Rule Name   : Failed Logon - Windows
+  Severity    : Info
+  Time Window : 5
+  Source Type : (leave empty)
+  Condition   : An account failed to log on
+
+  TRIGGER:
+  INSERT INTO systemlogs (log_datetime, host, program, pid, message, source_ip)
+  VALUES (NOW(), 'DESKTOP-J30GGBB', 'Microsoft-Windows-Security-Auditing', '4625',
+          'An account failed to log on. Subject: Security ID: S-1-0-0 Account Name: testuser Failure Reason: Unknown user name or bad password.',
+          '127.0.0.1');
+
+────────────────────────────────────────────────────────────────
+RULE 2 — Account Locked Out
+────────────────────────────────────────────────────────────────
+  Rule Name   : Account Locked Out
+  Severity    : Info        ← MUST be Info, not Warning
+  Time Window : 5
+  Source Type : (leave empty)
+  Condition   : A user account was locked out
+
+  TRIGGER:
+  INSERT INTO systemlogs (log_datetime, host, program, pid, message, source_ip)
+  VALUES (NOW(), 'DESKTOP-J30GGBB', 'Microsoft-Windows-Security-Auditing', '4740',
+          'A user account was locked out. Target Account Name: testuser Caller Computer Name: DESKTOP-J30GGBB',
+          '127.0.0.1');
+
+────────────────────────────────────────────────────────────────
+RULE 3 — New Service Installed
+────────────────────────────────────────────────────────────────
+  Rule Name   : New Service Installed
+  Severity    : Info        ← MUST be Info, not Warning
+  Time Window : 5
+  Source Type : (leave empty)
+  Condition   : A new service was installed in the system
+
+  TRIGGER:
+  INSERT INTO systemlogs (log_datetime, host, program, pid, message, source_ip)
+  VALUES (NOW(), 'DESKTOP-J30GGBB', 'Service Control Manager', '7045',
+          'A new service was installed in the system. Service Name: TestSvc Service File Name: C:\Windows\System32\test.exe',
+          '127.0.0.1');
+
+────────────────────────────────────────────────────────────────
+RULE 4 — Special Privileges Assigned
+────────────────────────────────────────────────────────────────
+  Rule Name   : Special Privileges Assigned
+  Severity    : Info
+  Time Window : 5
+  Source Type : (leave empty)
+  Condition   : Special privileges assigned to new logon
+
+  TRIGGER:
+  INSERT INTO systemlogs (log_datetime, host, program, pid, message, source_ip)
+  VALUES (NOW(), 'DESKTOP-J30GGBB', 'Microsoft-Windows-Security-Auditing', '4672',
+          'Special privileges assigned to new logon. Account Name: SYSTEM Privileges: SeAssignPrimaryTokenPrivilege SeDebugPrivilege',
+          '127.0.0.1');
+
+────────────────────────────────────────────────────────────────
+RULE 5 — Brute Force Detection
+────────────────────────────────────────────────────────────────
+  Rule Name   : Brute Force Detection
+  Severity    : Info
+  Time Window : 5
+  Source Type : (leave empty)
+  Condition   : authentication failure for user
+
+  TRIGGER (run all 5):
+  INSERT INTO systemlogs (log_datetime, host, program, pid, message, source_ip) VALUES (NOW(), 'DESKTOP-J30GGBB', 'sshd', '4625', 'An account failed to log on. authentication failure for user fakeadmin', '127.0.0.1');
+  INSERT INTO systemlogs (log_datetime, host, program, pid, message, source_ip) VALUES (NOW(), 'DESKTOP-J30GGBB', 'sshd', '4625', 'An account failed to log on. authentication failure for user admin', '127.0.0.1');
+  INSERT INTO systemlogs (log_datetime, host, program, pid, message, source_ip) VALUES (NOW(), 'DESKTOP-J30GGBB', 'sshd', '4625', 'An account failed to log on. authentication failure for user root', '127.0.0.1');
+  INSERT INTO systemlogs (log_datetime, host, program, pid, message, source_ip) VALUES (NOW(), 'DESKTOP-J30GGBB', 'sshd', '4625', 'An account failed to log on. authentication failure for user testuser', '127.0.0.1');
+  INSERT INTO systemlogs (log_datetime, host, program, pid, message, source_ip) VALUES (NOW(), 'DESKTOP-J30GGBB', 'sshd', '4625', 'An account failed to log on. authentication failure for user superadmin', '127.0.0.1');
+
+────────────────────────────────────────────────────────────────
+RULE 6 — SSH Failed Password
+────────────────────────────────────────────────────────────────
+  Rule Name   : SSH Failed Password
+  Severity    : Info
+  Time Window : 5
+  Source Type : (leave empty)
+  Condition   : failed password for invalid user
+
+  TRIGGER:
+  INSERT INTO systemlogs (log_datetime, host, program, pid, message, source_ip)
+  VALUES (NOW(), 'DESKTOP-J30GGBB', 'sshd', '22',
+          'failed password for invalid user postgres from 192.168.10.99 port 45231 ssh2',
+          '127.0.0.1');
+
+────────────────────────────────────────────────────────────────
+RULE 7 — SQL Login Failure
+────────────────────────────────────────────────────────────────
+  Rule Name   : SQL Login Failure
+  Severity    : Info
+  Time Window : 5
+  Source Type : (leave empty)
+  Condition   : login failed for user
+
+  TRIGGER:
+  INSERT INTO systemlogs (log_datetime, host, program, pid, message, source_ip)
+  VALUES (NOW(), 'DESKTOP-J30GGBB', 'MSSQL$SQLEXPRESS', '1433',
+          'login failed for user sa. Reason: Password did not match that for the login provided.',
+          '127.0.0.1');
+
+────────────────────────────────────────────────────────────────
+RULE 8 — Firewall Rule Added
+────────────────────────────────────────────────────────────────
+  Rule Name   : Firewall Rule Added
+  Severity    : Info
+  Time Window : 5
+  Source Type : (leave empty)
+  Condition   : rule has been added to the Windows Defender
+
+  TRIGGER:
+  INSERT INTO systemlogs (log_datetime, host, program, pid, message, source_ip)
+  VALUES (NOW(), 'DESKTOP-J30GGBB', 'Microsoft-Windows-Windows Firewall With Advanced Security', '2004',
+          'A rule has been added to the Windows Defender Firewall exception list. Rule Name: TestRule Protocol: TCP',
+          '127.0.0.1');
+
+────────────────────────────────────────────────────────────────
+RULE 9 — Firewall Rule Deleted
+────────────────────────────────────────────────────────────────
+  Rule Name   : Firewall Rule Deleted
+  Severity    : Info
+  Time Window : 5
+  Source Type : (leave empty)
+  Condition   : rule has been deleted in the Windows Defender
+
+  TRIGGER:
+  INSERT INTO systemlogs (log_datetime, host, program, pid, message, source_ip)
+  VALUES (NOW(), 'DESKTOP-J30GGBB', 'Microsoft-Windows-Windows Firewall With Advanced Security', '2006',
+          'A rule has been deleted in the Windows Defender Firewall exception list. Rule Name: TestRule',
+          '127.0.0.1');
+
+────────────────────────────────────────────────────────────────
+RULE 10 — Firewall Rule Modified
+────────────────────────────────────────────────────────────────
+  Rule Name   : Firewall Rule Modified
+  Severity    : Info
+  Time Window : 5
+  Source Type : (leave empty)
+  Condition   : rule has been modified in the Windows Defender
+
+  TRIGGER:
+  INSERT INTO systemlogs (log_datetime, host, program, pid, message, source_ip)
+  VALUES (NOW(), 'DESKTOP-J30GGBB', 'Microsoft-Windows-Windows Firewall With Advanced Security', '2005',
+          'A rule has been modified in the Windows Defender Firewall exception list. Rule Name: TestRule',
+          '127.0.0.1');
+
+────────────────────────────────────────────────────────────────
+RULE 11 — Critical System Event
+────────────────────────────────────────────────────────────────
+  Rule Name   : Critical System Event
+  Severity    : Info
+  Time Window : 5
+  Source Type : (leave empty)
+  Condition   : critical: OR emergency:
+
+  TRIGGER:
+  INSERT INTO systemlogs (log_datetime, host, program, pid, message, source_ip) VALUES (NOW(), 'DESKTOP-J30GGBB', 'kernel', '1', '<2>critical: disk failure detected on /dev/sda', '127.0.0.1');
+  INSERT INTO systemlogs (log_datetime, host, program, pid, message, source_ip) VALUES (NOW(), 'DESKTOP-J30GGBB', 'kernel', '1', '<0>emergency: kernel panic not syncing', '127.0.0.1');
+
+────────────────────────────────────────────────────────────────
+RULE 12 — System Integrity Alert
+────────────────────────────────────────────────────────────────
+  Rule Name   : System Integrity Alert
+  Severity    : Info
+  Time Window : 5
+  Source Type : (leave empty)
+  Condition   : system integrity check failed
+
+  TRIGGER:
+  INSERT INTO systemlogs (log_datetime, host, program, pid, message, source_ip)
+  VALUES (NOW(), 'DESKTOP-J30GGBB', 'kernel', '1',
+          '<1>alert: system integrity check failed',
+          '127.0.0.1');
+
+────────────────────────────────────────────────────────────────
+RULE 13 — Application Crash
+────────────────────────────────────────────────────────────────
+  Rule Name   : Application Crash
+  Severity    : Info
+  Time Window : 5
+  Source Type : (leave empty)
+  Condition   : Application Error: Faulting application name
+
+  TRIGGER:
+  INSERT INTO systemlogs (log_datetime, host, program, pid, message, source_ip)
+  VALUES (NOW(), 'DESKTOP-J30GGBB', 'Application Error', '1000',
+          'Application Error: Faulting application name: testapp.exe, version: 1.0.0.0, faulting module name: ntdll.dll',
+          '127.0.0.1');
+
+────────────────────────────────────────────────────────────────
+RULE 14 — Defender Config Changed
+────────────────────────────────────────────────────────────────
+  Rule Name   : Defender Config Changed
+  Severity    : Info
+  Time Window : 5
+  Source Type : (leave empty)
+  Condition   : Microsoft Defender Antivirus Configuration
+
+  TRIGGER:
+  INSERT INTO systemlogs (log_datetime, host, program, pid, message, source_ip)
+  VALUES (NOW(), 'DESKTOP-J30GGBB', 'Microsoft-Windows-Windows Defender', '5007',
+          'Microsoft-Windows-Windows Defend: Microsoft Defender Antivirus Configuration has changed. Setting: Real-Time Protection Old value: 1 New value: 0',
+          '127.0.0.1');
+
+────────────────────────────────────────────────────────────────
+RULE 15 — PowerShell Session
+────────────────────────────────────────────────────────────────
+  Rule Name   : PowerShell Session
+  Severity    : Info
+  Time Window : 5
+  Source Type : (leave empty)
+  Condition   : Windows PowerShell has started an IPC listening thread
+
+  TRIGGER:
+  INSERT INTO systemlogs (log_datetime, host, program, pid, message, source_ip)
+  VALUES (NOW(), 'DESKTOP-J30GGBB', 'PowerShell', '4103',
+          'Windows PowerShell has started an IPC listening thread on process: 9999 in AppDomain: DefaultAppDomain',
+          '127.0.0.1');
+
+
+================================================================
+  ADD ALL 15 RULES IN ONE SQL SCRIPT
+  (run this in pgAdmin to insert all rules at once)
+================================================================
+
+-- Step 1: Clear existing alert flood
+UPDATE alertevent SET acknowledged = true, acknowledgedat = NOW()
+WHERE acknowledged = false;
+
+-- Step 2: Fix Brute Force rule condition
+UPDATE alertrule
+SET conditionexpression = 'authentication failure for user'
+WHERE name ILIKE '%brute force%' AND isdeleted = false;
+
+-- Step 3: Insert all remaining rules
+INSERT INTO alertrule (name, description, severity, conditionexpression, sourcetype, timewindow, enabled, isdeleted, createdat, updatedat) VALUES
+('Account Locked Out',         'Account locked after too many failures (Event 4740)',     'Info', 'A user account was locked out',                          '', 5, true, false, NOW(), NOW()),
+('Failed Logon - Windows',     'Windows logon failure (Event 4625)',                      'Info', 'An account failed to log on',                            '', 5, true, false, NOW(), NOW()),
+('SSH Failed Password',        'Failed SSH authentication attempt',                       'Info', 'failed password for invalid user',                       '', 5, true, false, NOW(), NOW()),
+('SQL Login Failure',          'Failed SQL Server login attempt',                         'Info', 'login failed for user',                                  '', 5, true, false, NOW(), NOW()),
+('Special Privileges Assigned','Special privileges assigned at logon (Event 4672)',       'Info', 'Special privileges assigned to new logon',               '', 5, true, false, NOW(), NOW()),
+('New Service Installed',      'New Windows service registered (Event 7045)',             'Info', 'A new service was installed in the system',               '', 5, true, false, NOW(), NOW()),
+('Firewall Rule Added',        'New Windows Firewall rule added',                         'Info', 'rule has been added to the Windows Defender',            '', 5, true, false, NOW(), NOW()),
+('Firewall Rule Deleted',      'Windows Firewall rule deleted',                           'Info', 'rule has been deleted in the Windows Defender',          '', 5, true, false, NOW(), NOW()),
+('Firewall Rule Modified',     'Windows Firewall rule modified',                          'Info', 'rule has been modified in the Windows Defender',         '', 5, true, false, NOW(), NOW()),
+('Critical System Event',      'Critical or emergency syslog message',                    'Info', 'critical: OR emergency:',                                '', 5, true, false, NOW(), NOW()),
+('System Integrity Alert',     'System integrity check failure',                          'Info', 'system integrity check failed',                          '', 5, true, false, NOW(), NOW()),
+('Application Crash',          'Windows application faulted or crashed',                  'Info', 'Application Error: Faulting application name',           '', 5, true, false, NOW(), NOW()),
+('Defender Config Changed',    'Windows Defender Antivirus config changed',               'Info', 'Microsoft Defender Antivirus Configuration',             '', 5, true, false, NOW(), NOW()),
+('PowerShell Session',         'PowerShell IPC thread started — possible script exec',    'Info', 'Windows PowerShell has started an IPC listening thread', '', 5, true, false, NOW(), NOW());
+
+
+================================================================
+  MODULE 2 — ANOMALY DETECTION
+  Portal: Anomaly Detection → + New Rule
+  Worker checks every 30 seconds (appsettings.json)
+================================================================
+
+HOW TO ADD A RULE — FIELD GUIDE:
+┌──────────────────────────┬───────────────────────────────────────────────────┐
+│ FIELD                    │ WHAT TO ENTER                                     │
+├──────────────────────────┼───────────────────────────────────────────────────┤
+│ Name *                   │ Any name                                          │
+│ Detection Metric         │ EpsTotal        → total events/sec platform-wide  │
+│                          │ AuthFailureRate → counts auth failure messages    │
+│                          │ SeveritySpike   → critical/emergency event count  │
+│                          │ NewSourceIp     → new unknown device appears      │
+│                          │ SilentSource    → known source goes quiet         │
+│ Baseline Window (mins)   │ Use 5 for testing (fast baseline)                 │
+│ Threshold (×baseline)    │ Use 2.0 for testing (fire when 2× normal rate)    │
+│ Min Absolute Value       │ Use 3 for testing (ignore noise below 3 events)   │
+│ Severity                 │ Critical / High / Medium / Low                    │
+│ Auto-create Incident     │ ON = auto-creates an Incident when rule fires     │
+│ Enabled                  │ Toggle ON                                         │
+└──────────────────────────┴───────────────────────────────────────────────────┘
+
+────────────────────────────────────────────────────────────────
+RULE 1 — Auth Failure Spike  [Auto-creates Incident]
+────────────────────────────────────────────────────────────────
+  Name                  : Auth Failure Spike
+  Metric Type           : AuthFailureRate
+  Baseline Window (mins): 5
+  Threshold Multiplier  : 2.0
+  Absolute Minimum      : 3
+  Severity              : High
+  Auto Create Incident  : YES
+  Enable                : ON
+
+  TRIGGER (insert 6 auth failures):
+  INSERT INTO systemlogs (log_datetime, host, program, pid, message, source_ip) VALUES (NOW(), 'DESKTOP-J30GGBB', 'sshd', '1', 'authentication failure for user root', '127.0.0.1');
+  INSERT INTO systemlogs (log_datetime, host, program, pid, message, source_ip) VALUES (NOW(), 'DESKTOP-J30GGBB', 'sshd', '1', 'authentication failure for user admin', '127.0.0.1');
+  INSERT INTO systemlogs (log_datetime, host, program, pid, message, source_ip) VALUES (NOW(), 'DESKTOP-J30GGBB', 'sshd', '1', 'authentication failure for user fakeadmin', '127.0.0.1');
+  INSERT INTO systemlogs (log_datetime, host, program, pid, message, source_ip) VALUES (NOW(), 'DESKTOP-J30GGBB', 'sshd', '1', 'failed password for invalid user testuser', '127.0.0.1');
+  INSERT INTO systemlogs (log_datetime, host, program, pid, message, source_ip) VALUES (NOW(), 'DESKTOP-J30GGBB', 'sshd', '1', 'failed password for invalid user postgres', '127.0.0.1');
+  INSERT INTO systemlogs (log_datetime, host, program, pid, message, source_ip) VALUES (NOW(), 'DESKTOP-J30GGBB', 'sshd', '1', 'login failed for user sa', '127.0.0.1');
+
+────────────────────────────────────────────────────────────────
+RULE 2 — EPS Spike
+────────────────────────────────────────────────────────────────
+  Name                  : EPS Spike
+  Metric Type           : EpsTotal
+  Baseline Window (mins): 5
+  Threshold Multiplier  : 3.0
+  Absolute Minimum      : 10
+  Severity              : Medium
+  Auto Create Incident  : NO
+  Enable                : ON
+
+  TRIGGER (insert 25 logs at once):
+  INSERT INTO systemlogs (log_datetime, host, program, pid, message, source_ip)
+  SELECT NOW(), 'DESKTOP-J30GGBB', 'stress-test', gs::text,
+         'Stress test event number ' || gs || ' for EPS spike test',
+         '127.0.0.1'
+  FROM generate_series(1, 25) gs;
+
+────────────────────────────────────────────────────────────────
+RULE 3 — New Unknown Device  [Auto-creates Incident]
+────────────────────────────────────────────────────────────────
+  Name                  : New Unknown Device
+  Metric Type           : NewSourceIp
+  Baseline Window (mins): 10
+  Threshold Multiplier  : 1.0
+  Absolute Minimum      : 1
+  Severity              : High
+  Auto Create Incident  : YES
+  Enable                : ON
+
+  TRIGGER (log from a brand new IP never seen before):
+  INSERT INTO systemlogs (log_datetime, host, program, pid, message, source_ip)
+  VALUES (NOW(), 'UNKNOWN-DEVICE-99', 'syslogd', '1',
+          'System started. New device UNKNOWN-DEVICE-99 connected to network.',
+          '10.99.99.99');
+
+────────────────────────────────────────────────────────────────
+RULE 4 — Silent Source
+────────────────────────────────────────────────────────────────
+  Name                  : Silent Source
+  Metric Type           : SilentSource
+  Baseline Window (mins): 10
+  Threshold Multiplier  : 1.0
+  Absolute Minimum      : 1
+  Severity              : Medium
+  Auto Create Incident  : NO
+  Enable                : ON
+
+  TRIGGER (simulate the source going silent):
+  UPDATE source SET status='Online', lastseen = NOW() - INTERVAL '20 minutes'
+  WHERE name = 'DESKTOP-J30GGBB';
+
+────────────────────────────────────────────────────────────────
+RULE 5 — Critical Event Surge  [Auto-creates Incident]
+────────────────────────────────────────────────────────────────
+  Name                  : Critical Event Surge
+  Metric Type           : SeveritySpike
+  Baseline Window (mins): 5
+  Threshold Multiplier  : 2.0
+  Absolute Minimum      : 2
+  Severity              : Critical
+  Auto Create Incident  : YES
+  Enable                : ON
+
+  TRIGGER (logs with <2> PRI = Critical severity):
+  INSERT INTO systemlogs (log_datetime, host, program, pid, message, source_ip) VALUES (NOW(), 'DESKTOP-J30GGBB', 'kernel', '1', '<2>critical: disk failure detected on /dev/sda', '127.0.0.1');
+  INSERT INTO systemlogs (log_datetime, host, program, pid, message, source_ip) VALUES (NOW(), 'DESKTOP-J30GGBB', 'kernel', '1', '<2>critical: memory corruption detected in process', '127.0.0.1');
+  INSERT INTO systemlogs (log_datetime, host, program, pid, message, source_ip) VALUES (NOW(), 'DESKTOP-J30GGBB', 'kernel', '1', '<1>alert: system integrity check failed', '127.0.0.1');
+  INSERT INTO systemlogs (log_datetime, host, program, pid, message, source_ip) VALUES (NOW(), 'DESKTOP-J30GGBB', 'kernel', '1', '<0>emergency: kernel panic not syncing', '127.0.0.1');
+
+
+================================================================
+  MODULE 3 — INCIDENTS
+  Portal: Incidents → + New Incident
+================================================================
+
+HOW TO ADD AN INCIDENT — FIELD GUIDE:
+┌───────────────┬───────────────────────────────────────────────────────────┐
+│ FIELD         │ WHAT TO ENTER                                             │
+├───────────────┼───────────────────────────────────────────────────────────┤
+│ Title *       │ Short description, e.g. "Brute Force on DESKTOP-J30GGBB" │
+│ Priority      │ Critical / High / Medium / Low / Informational           │
+│ Status        │ Open / Investigating / Contained / Resolved / Closed     │
+│ Description   │ Full details of what happened                             │
+│ Affected Hosts│ Comma-separated: DESKTOP-J30GGBB, 127.0.0.1             │
+│ Tags          │ Comma-separated: brute-force, auth, lateral-movement     │
+│ Analyst Notes │ Investigation notes, timeline, next steps                │
+└───────────────┴───────────────────────────────────────────────────────────┘
+
+  NOTE: Incidents auto-created when Anomaly rules with
+  "Auto-create Incident = YES" fire. No manual SQL needed.
+
+  MANUAL TRIGGER via SQL:
+  INSERT INTO incident (title, description, status, priority, createdat)
+  VALUES ('Brute Force Detected - DESKTOP-J30GGBB',
+          'Multiple failed logons from 127.0.0.1 targeting fakeadmin account',
+          'Open', 'High', NOW());
+
+
+================================================================
+  MODULE 4 — THREAT INTEL
+  Portal: Threat Intel → + Add IOC
+================================================================
+
+HOW TO ADD AN INDICATOR — FIELD GUIDE:
+┌──────────────────┬──────────────────────────────────────────────────────────┐
+│ FIELD            │ WHAT TO ENTER                                            │
+├──────────────────┼──────────────────────────────────────────────────────────┤
+│ Type *           │ IP / Domain / Hash / URL / Email                         │
+│ Value *          │ The actual indicator                                      │
+│ Threat Category  │ Malware / Phishing / Botnet / Scanner / APT / Other      │
+│ Confidence       │ 0–100. Use 80+ for reliable indicators                   │
+│ Source           │ AbuseIPDB / AlienVault OTX / Manual / Internal           │
+│ Description      │ Notes about this indicator                               │
+│ Active           │ Toggle ON                                                │
+└──────────────────┴──────────────────────────────────────────────────────────┘
+
+  EXAMPLE INDICATORS TO ADD:
+  ┌────────────┬──────────────────────────────────┬─────────────┬────────────┐
+  │ Type       │ Value                            │ Category    │ Confidence │
+  ├────────────┼──────────────────────────────────┼─────────────┼────────────┤
+  │ IP         │ 192.168.10.99                    │ Scanner     │ 90         │
+  │ IP         │ 10.0.0.55                        │ APT         │ 85         │
+  │ Domain     │ malware-test.local               │ Malware     │ 80         │
+  │ Hash       │ d41d8cd98f00b204e9800998ecf8427e │ Malware     │ 75         │
+  └────────────┴──────────────────────────────────┴─────────────┴────────────┘
+
+  CHECK VIA API:
+    /api/threat-intel/check?value=192.168.10.99
+    /api/threat-intel/check?value=malware-test.local
+
+
+================================================================
+  MODULE 5 — LOG FORWARDING
+  Portal: Log Forwarding → + Add Forwarder
+================================================================
+
+HOW TO ADD A FORWARDER — FIELD GUIDE:
+┌─────────────────┬──────────────────────────────────────────────────────────┐
+│ FIELD           │ WHAT TO ENTER                                            │
+├─────────────────┼──────────────────────────────────────────────────────────┤
+│ Name *          │ Any name, e.g. "Forward to SIEM"                        │
+│ Protocol        │ UDP (most common) / TCP / TLS / HTTP / HTTPS            │
+│ Format          │ RFC5424 / RFC3164 / JSON / CEF / LEEF                   │
+│ Host *          │ Destination IP or hostname                               │
+│ Port *          │ Default syslog = 514                                     │
+│ Severity Filter │ Leave empty = forward all. Or: Critical,Error           │
+│ Enable          │ Toggle ON                                                │
+└─────────────────┴──────────────────────────────────────────────────────────┘
+
+  EXAMPLE — Local test forwarder:
+    Name     : Local Test Forwarder
+    Protocol : UDP
+    Host     : 127.0.0.1
+    Port     : 5514
+    Format   : RFC5424
+    Filter   : (empty)
+    Enable   : ON
+
+  TEST LISTENER (run in PowerShell, press Ctrl+C to stop):
+    $udp = New-Object System.Net.Sockets.UdpClient 5514
+    while($true) {
+        $ep = [System.Net.IPEndPoint]::new([System.Net.IPAddress]::Any, 0)
+        $data = $udp.Receive([ref]$ep)
+        Write-Host ([System.Text.Encoding]::UTF8.GetString($data))
+    }
+
+
+================================================================
+  QUICKEST TEST — SINGLE INSERT → ALERT IN 10 SECONDS
+================================================================
+
+  1. Open pgAdmin → connect to DB above
+  2. Run this INSERT:
+
+  INSERT INTO systemlogs (log_datetime, host, program, pid, message, source_ip)
+  VALUES (NOW(), 'DESKTOP-J30GGBB', 'Microsoft-Windows-Security-Auditing', '4625',
+          'An account failed to log on. authentication failure for user testuser',
+          '127.0.0.1');
+
+  3. Wait 10 seconds
+  4. Open SentinelLog → Alerts page
+  5. Both "Failed Logon - Windows" and "Brute Force Detection" rules fire
+
+================================================================

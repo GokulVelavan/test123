@@ -1,0 +1,213 @@
+name: Build Linux Packages
+
+on:
+  push:
+    branches: [ main, master ]
+  workflow_dispatch:   # allows manual trigger from GitHub UI
+
+jobs:
+  build:
+    runs-on: ubuntu-22.04
+
+    steps:
+
+    # ── 1. Checkout code ───────────────────────────────────────────────────────
+    - name: Checkout repository
+      uses: actions/checkout@v4
+
+    # ── 2. Install .NET SDK 8 ──────────────────────────────────────────────────
+    - name: Setup .NET 8 SDK
+      uses: actions/setup-dotnet@v4
+      with:
+        dotnet-version: '8.0.x'
+
+    # ── 3. Restore NuGet packages ──────────────────────────────────────────────
+    - name: Restore Agent dependencies
+      run: dotnet restore SentinelLog-Agent-Linux/src/SyslogAgent/SyslogAgent.csproj
+
+    - name: Restore Worker dependencies
+      run: dotnet restore SentinelLog-Portal/drs.scaffold.syslog/DRS.Scaffold.Syslog.Worker/DRS.Scaffold.Syslog.Worker.csproj
+
+    # ── 4. Publish Agent (linux-x64) ───────────────────────────────────────────
+    - name: Publish SentinelLog Agent
+      run: |
+        dotnet publish SentinelLog-Agent-Linux/src/SyslogAgent/SyslogAgent.csproj \
+          -c Release \
+          -r linux-x64 \
+          --self-contained false \
+          -o SentinelLog-Agent-Linux/publish/SyslogAgent \
+          --nologo
+
+    # ── 5. Publish Worker (linux-x64) ──────────────────────────────────────────
+    - name: Publish SentinelLog Worker
+      run: |
+        dotnet publish SentinelLog-Portal/drs.scaffold.syslog/DRS.Scaffold.Syslog.Worker/DRS.Scaffold.Syslog.Worker.csproj \
+          -c Release \
+          -r linux-x64 \
+          --self-contained false \
+          -o SentinelLog-Portal/drs.scaffold.syslog/publish-worker-linux \
+          --nologo
+
+    # ── 6. Download offline .deb packages ─────────────────────────────────────
+    - name: Download offline .deb packages
+      run: |
+        # .NET 8 runtime debs (for factory machines)
+        mkdir -p /tmp/dotnet-runtime
+        cd /tmp/dotnet-runtime
+        apt-get download \
+          dotnet-runtime-8.0 \
+          dotnet-host \
+          dotnet-hostfxr-8.0 \
+          aspnetcore-runtime-8.0 \
+          libicu70 2>/dev/null || \
+        apt-get download \
+          dotnet-runtime-8.0 \
+          dotnet-host \
+          dotnet-hostfxr-8.0 \
+          aspnetcore-runtime-8.0 \
+          libicu72 2>/dev/null || true
+
+        echo "Downloaded $(ls *.deb 2>/dev/null | wc -l) .NET runtime deb(s)"
+
+        # Syslog-NG + Python packages (for receiver)
+        mkdir -p /tmp/syslog-packages
+        cd /tmp/syslog-packages
+        apt-get download \
+          syslog-ng \
+          syslog-ng-core \
+          syslog-ng-scl \
+          python3 \
+          python3-psycopg2 \
+          openssl \
+          libpq5 2>/dev/null || true
+
+        echo "Downloaded $(ls *.deb 2>/dev/null | wc -l) syslog/python deb(s)"
+
+    # ── 7. Bundle Agent package ────────────────────────────────────────────────
+    - name: Bundle sentinellog-agent-linux.tar.gz
+      run: |
+        mkdir -p /tmp/bundle/sentinellog-agent/publish/SyslogAgent
+        mkdir -p /tmp/bundle/sentinellog-agent/dotnet-runtime
+
+        cp SentinelLog-Agent-Linux/install.sh /tmp/bundle/sentinellog-agent/
+        chmod +x /tmp/bundle/sentinellog-agent/install.sh
+
+        cp -r SentinelLog-Agent-Linux/publish/SyslogAgent/. \
+              /tmp/bundle/sentinellog-agent/publish/SyslogAgent/
+
+        cp /tmp/dotnet-runtime/*.deb \
+           /tmp/bundle/sentinellog-agent/dotnet-runtime/ 2>/dev/null || true
+
+        cat > /tmp/bundle/sentinellog-agent/README.txt <<'TXT'
+        SentinelLog Agent – Linux Package
+        ===================================
+        Install:   sudo bash install.sh
+        Manage:    sentinellog-ctl status
+                   sentinellog-ctl start
+                   sentinellog-ctl stop
+                   sentinellog-ctl logs
+        TXT
+
+        tar -czf /tmp/sentinellog-agent-linux.tar.gz \
+            -C /tmp/bundle sentinellog-agent
+
+        echo "Agent package: $(du -sh /tmp/sentinellog-agent-linux.tar.gz | cut -f1)"
+
+    # ── 8. Bundle Receiver package ─────────────────────────────────────────────
+    - name: Bundle sentinellog-receiver-linux.tar.gz
+      run: |
+        mkdir -p /tmp/bundle/sentinellog-receiver/offline-packages
+
+        cp SentinelLog-Receiver-Linux/setup.sh \
+           /tmp/bundle/sentinellog-receiver/install.sh
+        chmod +x /tmp/bundle/sentinellog-receiver/install.sh
+
+        [ -f SentinelLog-Receiver-Linux/init-db.sql ] && \
+          cp SentinelLog-Receiver-Linux/init-db.sql \
+             /tmp/bundle/sentinellog-receiver/
+
+        cp /tmp/syslog-packages/*.deb \
+           /tmp/bundle/sentinellog-receiver/offline-packages/ 2>/dev/null || true
+
+        cat > /tmp/bundle/sentinellog-receiver/README.txt <<'TXT'
+        SentinelLog Receiver – Linux Package
+        ======================================
+        IMPORTANT: Run init-db.sql on your PostgreSQL server FIRST.
+
+        Install:   sudo bash install.sh
+        Manage:    sentinellog-ctl status
+                   sentinellog-ctl start
+                   sentinellog-ctl stop
+                   sentinellog-ctl logs
+        TXT
+
+        tar -czf /tmp/sentinellog-receiver-linux.tar.gz \
+            -C /tmp/bundle sentinellog-receiver
+
+        echo "Receiver package: $(du -sh /tmp/sentinellog-receiver-linux.tar.gz | cut -f1)"
+
+    # ── 9. Bundle Worker package ───────────────────────────────────────────────
+    - name: Bundle sentinellog-worker-linux.tar.gz
+      run: |
+        mkdir -p /tmp/bundle/sentinellog-worker/publish-worker-linux
+        mkdir -p /tmp/bundle/sentinellog-worker/dotnet-runtime
+
+        cp SentinelLog-Portal/drs.scaffold.syslog/install-worker.sh \
+           /tmp/bundle/sentinellog-worker/install.sh
+        chmod +x /tmp/bundle/sentinellog-worker/install.sh
+
+        cp -r SentinelLog-Portal/drs.scaffold.syslog/publish-worker-linux/. \
+              /tmp/bundle/sentinellog-worker/publish-worker-linux/
+
+        cp /tmp/dotnet-runtime/*.deb \
+           /tmp/bundle/sentinellog-worker/dotnet-runtime/ 2>/dev/null || true
+
+        cat > /tmp/bundle/sentinellog-worker/README.txt <<'TXT'
+        SentinelLog Worker – Linux Package
+        =====================================
+        Install:   sudo bash install.sh
+        Manage:    sentinellog-ctl status
+                   sentinellog-ctl start
+                   sentinellog-ctl stop
+                   sentinellog-ctl logs worker
+        TXT
+
+        tar -czf /tmp/sentinellog-worker-linux.tar.gz \
+            -C /tmp/bundle sentinellog-worker
+
+        echo "Worker package: $(du -sh /tmp/sentinellog-worker-linux.tar.gz | cut -f1)"
+
+    # ── 10. Upload all 3 packages as downloadable artifacts ───────────────────
+    - name: Upload Agent package
+      uses: actions/upload-artifact@v4
+      with:
+        name: sentinellog-agent-linux
+        path: /tmp/sentinellog-agent-linux.tar.gz
+        retention-days: 30
+
+    - name: Upload Receiver package
+      uses: actions/upload-artifact@v4
+      with:
+        name: sentinellog-receiver-linux
+        path: /tmp/sentinellog-receiver-linux.tar.gz
+        retention-days: 30
+
+    - name: Upload Worker package
+      uses: actions/upload-artifact@v4
+      with:
+        name: sentinellog-worker-linux
+        path: /tmp/sentinellog-worker-linux.tar.gz
+        retention-days: 30
+
+    # ── Summary ────────────────────────────────────────────────────────────────
+    - name: Build summary
+      run: |
+        echo "## SentinelLog Linux Packages Built" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "| Package | Size |" >> $GITHUB_STEP_SUMMARY
+        echo "|---------|------|" >> $GITHUB_STEP_SUMMARY
+        echo "| sentinellog-agent-linux.tar.gz | $(du -sh /tmp/sentinellog-agent-linux.tar.gz | cut -f1) |" >> $GITHUB_STEP_SUMMARY
+        echo "| sentinellog-receiver-linux.tar.gz | $(du -sh /tmp/sentinellog-receiver-linux.tar.gz | cut -f1) |" >> $GITHUB_STEP_SUMMARY
+        echo "| sentinellog-worker-linux.tar.gz | $(du -sh /tmp/sentinellog-worker-linux.tar.gz | cut -f1) |" >> $GITHUB_STEP_SUMMARY
+        echo "" >> $GITHUB_STEP_SUMMARY
+        echo "Download from the **Artifacts** section above." >> $GITHUB_STEP_SUMMARY

@@ -1,0 +1,12 @@
+**/bin/
+**/obj/
+**/publish/
+**/publish-worker-linux/
+**/.vs/
+*.user
+SentinelLog-Receiver-Linux/offline-packages/
+SentinelLog-Installer/Output/
+SentinelLog-Installer/dependencies/
+**/*.deb
+**/*.exe
+**/*.tar
