@@ -54,6 +54,7 @@ jobs:
         # .NET 8 runtime debs (for factory machines)
         mkdir -p /tmp/dotnet-runtime
         cd /tmp/dotnet-runtime
+        sudo apt-get update -qq
         apt-get download \
           dotnet-runtime-8.0 \
           dotnet-host \
@@ -69,8 +70,11 @@ jobs:
 
         echo "Downloaded $(ls *.deb 2>/dev/null | wc -l) .NET runtime deb(s)"
 
-        # Syslog-NG + Python packages (for receiver)
+        # Syslog-NG + Python packages — use pre-downloaded packages from repo
         mkdir -p /tmp/syslog-packages
+        cp SentinelLog-Receiver-Linux/offline-packages/*.deb /tmp/syslog-packages/ 2>/dev/null || true
+
+        # Also try apt-get download as supplement (may get newer versions)
         cd /tmp/syslog-packages
         apt-get download \
           syslog-ng \
@@ -81,7 +85,7 @@ jobs:
           openssl \
           libpq5 2>/dev/null || true
 
-        echo "Downloaded $(ls *.deb 2>/dev/null | wc -l) syslog/python deb(s)"
+        echo "Syslog/python deb count: $(ls *.deb 2>/dev/null | wc -l)"
 
     # ── 7. Bundle Agent package ────────────────────────────────────────────────
     - name: Bundle sentinellog-agent-linux.tar.gz
