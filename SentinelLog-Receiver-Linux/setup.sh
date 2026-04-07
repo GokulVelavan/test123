@@ -150,7 +150,7 @@ echo "     Installed at: $CTL_BIN"
 # MAIN
 # =============================================================================
 
-[[ $EUID -ne 0 ]] && error "Run as root:  sudo ./setup.sh"
+[[ $EUID -ne 0 ]] && error "Run as root:  sudo ./install.sh"
 
 TLS_PORT="6514"
 CERT_DIR="/etc/syslog-ng/cert.d"
@@ -218,7 +218,7 @@ if command -v syslog-ng &>/dev/null && command -v python3 &>/dev/null; then
     fi
 elif [ -d "$PKG_DIR" ] && ls "$PKG_DIR"/*.deb &>/dev/null 2>&1; then
     dpkg -i "$PKG_DIR"/*.deb 2>/dev/null || true
-    apt-get install -f -y --no-download 2>/dev/null || true
+    apt-get install -f -y 2>/dev/null || true
     for pkg in syslog-ng python3 openssl; do
         command -v "$pkg" &>/dev/null || error "$pkg failed to install — check offline-packages/."
     done

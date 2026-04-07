@@ -174,7 +174,7 @@ else
     if ls "$RUNTIME_DIR"/*.deb &>/dev/null 2>&1; then
         echo "     Installing from bundled .deb packages..."
         dpkg -i "$RUNTIME_DIR"/*.deb 2>/dev/null || true
-        apt-get install -f -y --no-download 2>/dev/null || true
+        apt-get install -f -y 2>/dev/null || true
     elif ls "$RUNTIME_DIR"/*.rpm &>/dev/null 2>&1; then
         echo "     Installing from bundled .rpm packages..."
         rpm -ivh --nodeps "$RUNTIME_DIR"/*.rpm 2>/dev/null || true
